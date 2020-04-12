@@ -2,9 +2,10 @@
 
 (defn new-scanner [source]
   {:source source
+   :errors []
    :start 0
    :current 0
-   :line 0
+   :line 1
    :tokens []})
 
 (defn is-at-end [scanner]
@@ -27,18 +28,63 @@
                 :line (:line scanner)}]
      (update scanner :tokens conj token))))
 
+(defn error [scanner message]
+  (update scanner :errors conj {:line (:line scanner) :message message}))
+
+(defn match [scanner expected]
+  (and (not (is-at-end scanner)) (= (current-char scanner) expected)))
+
+(defn skip-comment [scanner]
+  (if (or (is-at-end scanner) (= (current-char scanner) \newline))
+    scanner
+    (recur (advance scanner))))
+
+(defn add-string [scanner]
+  (let [char (current-char scanner)
+        advanced (advance scanner)]
+    (cond
+      (is-at-end scanner) (error scanner "Unterminated string.")
+      (= char \") (add-token advanced :string (subs (:source advanced)
+                                                    (inc (:start advanced))
+                                                    (dec (:current advanced))))
+      :else (recur (if (= char \newline) (update advanced :line inc) advanced)))))
+
 (defn scan-token [scanner]
-  (case (current-char scanner)
-    \( (add-token (advance scanner) :lparen)
-    \) (add-token (advance scanner) :rparen)
-    \{ (add-token (advance scanner) :lbrace)
-    \} (add-token (advance scanner) :rbrace)
-    \, (add-token (advance scanner) :comma)
-    \. (add-token (advance scanner) :dot)
-    \- (add-token (advance scanner) :minus)
-    \+ (add-token (advance scanner) :plus)
-    \; (add-token (advance scanner) :semicolon)
-    \* (add-token (advance scanner) :star)))
+  (let [char (current-char scanner)
+        scanner (advance scanner)]
+    (case char
+      \( (add-token scanner :lparen)
+      \) (add-token scanner :rparen)
+      \{ (add-token scanner :lbrace)
+      \} (add-token scanner :rbrace)
+      \, (add-token scanner :comma)
+      \. (add-token scanner :dot)
+      \- (add-token scanner :minus)
+      \+ (add-token scanner :plus)
+      \; (add-token scanner :semicolon)
+      \* (add-token scanner :star)
+      \! (if (match scanner \=)
+           (add-token (advance scanner) :bang_equal)
+           (add-token scanner :bang))
+      \= (if (match scanner \=)
+           (add-token (advance scanner) :equal_equal)
+           (add-token scanner :equal))
+      \< (if (match scanner \=)
+           (add-token (advance scanner) :less_equal)
+           (add-token scanner :less))
+      \> (if (match scanner \=)
+           (add-token (advance scanner) :greater_equal)
+           (add-token scanner :greater))
+      \/ (if (match scanner \/)
+           (skip-comment (advance scanner))
+           (add-token scanner :slash))
+      \return scanner
+      \space scanner
+      \tab scanner
+      \newline (update scanner :line inc)
+      \" (add-string scanner)
+      
+      (error scanner (str "Unexpected character: " char)))))
 
 (defn next-token [scanner]
   (assoc scanner :start (:current scanner)))
@@ -50,3 +96,22 @@
       (recur (-> scanner
                  (scan-token)
                  (next-token))))))
+
+(defn scanner-test [source]
+  (let [result (scan-tokens source)]
+    [(map :type (:tokens result))
+     (:errors result)]))
+
+(comment (scanner-test "()"))
+(comment (scanner-test "()&%"))
+(comment (scanner-test "()!+="))
+(comment (scanner-test "()!="))
+(comment (scanner-test "()!=//This is a comment"))
+(comment (scanner-test "()!=//This is a comment[]()"))
+(comment (scanner-test "//This is a comment\n{}()"))
+(comment (scanner-test "//This is a comment"))
+(comment (scanner-test "+  -  (  )"))
+(comment (scanner-test "\n//comment\n\n&"))
+(comment (scanner-test "\"hello\" + \"world\""))
+(comment (scan-tokens "\"hello\" + \"world\""))
+(comment (:tokens (scan-tokens "\"hel\nlo\" + \"world\"")))
