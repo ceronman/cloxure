@@ -157,7 +157,11 @@
 
 (defn- scanner-test [source]
   (let [result (scan-tokens source)]
-    [(map #(str (:type %) "`" (:text %) "`" "(" (:literal %) ")") (:tokens result))
+    [(map #(str (:type %) 
+                (cond 
+                  (:literal %) (str "=" (:literal %))
+                  (= (:type %) :identifier) (str "=" (:text %))
+                  :else "")) (:tokens result))
      (:errors result)]))
 
 (comment (scanner-test "()"))
