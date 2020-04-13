@@ -8,7 +8,7 @@
    :line 1
    :tokens []})
 
-(defn is-at-end [scanner]
+(defn is-at-end? [scanner]
   (>= (:current scanner) (count (:source scanner))))
 
 (defn current-char [scanner]
@@ -32,10 +32,16 @@
   (update scanner :errors conj {:line (:line scanner) :message message}))
 
 (defn match [scanner expected]
-  (and (not (is-at-end scanner)) (= (current-char scanner) expected)))
+  (and (not (is-at-end? scanner)) (= (current-char scanner) expected)))
+
+(defn peek-next [scanner]
+  (let [next (inc (:current scanner))
+        source (:source scanner)]
+    (when (< next (count source))
+      (nth source next))))
 
 (defn skip-comment [scanner]
-  (if (or (is-at-end scanner) (= (current-char scanner) \newline))
+  (if (or (is-at-end? scanner) (= (current-char scanner) \newline))
     scanner
     (recur (advance scanner))))
 
@@ -43,11 +49,25 @@
   (let [char (current-char scanner)
         advanced (advance scanner)]
     (cond
-      (is-at-end scanner) (error scanner "Unterminated string.")
+      (is-at-end? scanner) (error scanner "Unterminated string.")
       (= char \") (add-token advanced :string (subs (:source advanced)
                                                     (inc (:start advanced))
                                                     (dec (:current advanced))))
       :else (recur (if (= char \newline) (update advanced :line inc) advanced)))))
+
+(defn is-digit? [char]
+  (and char
+       (>= (int char) (int \0))
+       (<= (int char) (int \9))))
+
+(defn add-number [scanner]
+  (if (or (is-at-end? scanner) (not (is-digit? (current-char scanner))))
+    (if (and (match scanner \.) (is-digit? (peek-next scanner)))
+      (recur (advance scanner))
+      (add-token scanner :number (Double/parseDouble (subs (:source scanner)
+                                                           (:start scanner)
+                                                           (:current scanner)))))
+    (recur (advance scanner))))
 
 (defn scan-token [scanner]
   (let [char (current-char scanner)
@@ -84,14 +104,16 @@
       \newline (update scanner :line inc)
       \" (add-string scanner)
       
-      (error scanner (str "Unexpected character: " char)))))
+      (if (is-digit? char)
+        (add-number scanner)
+        (error scanner (str "Unexpected character: " char))))))
 
 (defn next-token [scanner]
   (assoc scanner :start (:current scanner)))
 
 (defn scan-tokens [source]
   (loop [scanner (new-scanner source)]
-    (if (is-at-end scanner)
+    (if (is-at-end? scanner)
       (add-token scanner :eof)
       (recur (-> scanner
                  (scan-token)
@@ -99,7 +121,7 @@
 
 (defn scanner-test [source]
   (let [result (scan-tokens source)]
-    [(map :type (:tokens result))
+    [(map #(str (:type %) "(" (:literal %) ")") (:tokens result))
      (:errors result)]))
 
 (comment (scanner-test "()"))
@@ -113,5 +135,5 @@
 (comment (scanner-test "+  -  (  )"))
 (comment (scanner-test "\n//comment\n\n&"))
 (comment (scanner-test "\"hello\" + \"world\""))
-(comment (scan-tokens "\"hello\" + \"world\""))
-(comment (:tokens (scan-tokens "\"hel\nlo\" + \"world\"")))
+(comment (scanner-test "123 + 125.12"))
+(comment (scanner-test "123 + 125.11. .5"))
