@@ -38,14 +38,23 @@
 (defn- advance [scanner]
   (update scanner :current inc))
 
+(defn token
+  ([type text]
+   (token type text nil 1))
+  ([type text literal line]
+   {:type type
+    :text text
+    :literal literal
+    :line line}))
+
 (defn- add-token
   ([scanner token-type]
    (add-token scanner token-type nil))
   ([scanner token-type literal]
-   (update scanner :tokens conj {:type token-type
-                                 :text (current-text scanner)
-                                 :literal literal
-                                 :line (:line scanner)})))
+   (update scanner :tokens conj (token token-type
+                                       (current-text scanner)
+                                       literal
+                                       (:line scanner)))))
 
 (defn- error [scanner message]
   (update scanner :errors conj {:line (:line scanner) :message message}))
