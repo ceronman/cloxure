@@ -1,4 +1,5 @@
-(ns cloxure.scanner)
+(ns cloxure.scanner
+  (:require [clojure.string :as string]))
 
 (def keywords 
   #{"and"
@@ -89,14 +90,16 @@
     (recur (advance scanner))))
 
 (defn- add-string [scanner]
-  (let [char (current-char scanner)
-        advanced (advance scanner)]
-    (cond
-      (is-at-end? scanner) (error scanner "Unterminated string.")
-      (= char \") (add-token advanced :string (subs (:source advanced)
-                                                    (inc (:start advanced))
-                                                    (dec (:current advanced))))
-      :else (recur (if (= char \newline) (update advanced :line inc) advanced)))))
+  (cond 
+    (is-at-end? scanner) (error scanner "Unterminated string")
+    (= (current-char scanner) \") (let [advanced (advance scanner)]
+                                    (add-token advanced :string (subs (:source advanced)
+                                                                     (inc (:start advanced))
+                                                                     (:current advanced))))
+    :else (recur 
+           (advance (if (= char \newline)
+                      (update scanner :line inc)
+                      scanner)))))
 
 (defn- add-number [scanner]
   (if (or (is-at-end? scanner) (not (is-digit? (current-char scanner))))
@@ -107,7 +110,7 @@
 
 (defn- add-identifier [scanner]
   (if (or (is-at-end? scanner) (not (is-alphanumeric (current-char scanner))))
-    (let [text (current-text)]
+    (let [text (current-text scanner)]
       (if-let [kw (keywords text)]
         (add-token scanner (keyword kw))
         (add-token scanner :identifier)))
@@ -156,7 +159,7 @@
 (defn- next-token [scanner]
   (assoc scanner :start (:current scanner)))
 
-(defn scan-tokens [source]
+(defn scan [source]
   (loop [scanner (new-scanner source)]
     (if (is-at-end? scanner)
       (add-token scanner :eof)
@@ -164,15 +167,20 @@
                  (scan-token)
                  (next-token))))))
 
-(defn- scanner-test [source]
-  (let [result (scan-tokens source)]
-    [(map #(str (:type %) 
-                (cond 
-                  (:literal %) (str "=" (:literal %))
-                  (= (:type %) :identifier) (str "=" (:text %))
-                  :else "")) (:tokens result))
-     (:errors result)]))
+(defn scanner->str [scanner]
+  (let [errors (:errors scanner)]
+    (if (seq errors)
+      (string/join "\n" (map #(format "ERROR Line %s: %s" (:line %) (:message %)) errors))
+      (map #(str (:type %)
+                 (cond
+                   (:literal %) (str "=" (:literal %))
+                   (= (:type %) :identifier) (str "=" (:text %))
+                   :else "")) (:tokens scanner)))))
 
+(defn- scanner-test [source]
+  (println (scanner->str (scan source))))
+
+(comment (scanner-test "a"))
 (comment (scanner-test "()"))
 (comment (scanner-test "()&%"))
 (comment (scanner-test "()!+="))
@@ -191,3 +199,6 @@
 (comment (scanner-test "a + b + 4"))
 (comment (scanner-test "a or b + c"))
 (comment (scanner-test "if (a + b) { x = true }"))
+(comment (scanner-test "\"t\""))
+(comment (scanner-test "\"Unterminated string"))
+(comment (scanner-test "\""))

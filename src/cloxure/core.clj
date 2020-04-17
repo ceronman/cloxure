@@ -1,4 +1,5 @@
-(ns cloxure.core)
+(ns cloxure.core
+  (:require [cloxure.scanner :as scanner]))
 
 (defn error [message code]
   (binding [*out* *err*]
@@ -6,7 +7,8 @@
     (System/exit code)))
 
 (defn run [source]
-  (println "Running" source))
+  (let [scanner (scanner/scan source)]
+    (println (scanner/scanner->str scanner))))
 
 (defn run-file [filename]
   (try
