@@ -95,7 +95,7 @@
     (= (current-char scanner) \") (let [advanced (advance scanner)]
                                     (add-token advanced :string (subs (:source advanced)
                                                                      (inc (:start advanced))
-                                                                     (:current advanced))))
+                                                                     (dec (:current advanced)))))
     :else (recur 
            (advance (if (= char \newline)
                       (update scanner :line inc)
@@ -145,9 +145,7 @@
       \/ (if (match scanner \/)
            (skip-comment (advance scanner))
            (add-token scanner :slash))
-      \return scanner
-      \space scanner
-      \tab scanner
+      (\return \space \tab) scanner
       \newline (update scanner :line inc)
       \" (add-string scanner)
       
@@ -196,6 +194,7 @@
 (comment (scanner-test "123 + 125.11. .5"))
 (comment (scanner-test "hello.world()"))
 (comment (scanner-test "hello.world"))
+(comment (scanner-test "\"hello.world\""))
 (comment (scanner-test "a + b + 4"))
 (comment (scanner-test "a or b + c"))
 (comment (scanner-test "if (a + b) { x = true }"))

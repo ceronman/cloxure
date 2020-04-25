@@ -2,16 +2,16 @@
   (:require [cloxure.scanner :as scanner])
   (:require [clojure.string :as str]))
 
-(defn- binary [left operator right]
+(defn binary [left operator right]
   {:type :binary :left left :right right :operator operator})
 
-(defn- unary [operator right]
+(defn unary [operator right]
   {:type :unary :operator operator :right right})
 
-(defn- literal [value]
+(defn literal [value]
   {:type :literal :value value})
 
-(defn- group [expression]
+(defn group [expression]
   {:type :group :expression expression})
 
 (defmulti pretty-print
@@ -31,7 +31,7 @@
   (parenthesize "group" e))
 
 (defmethod pretty-print :literal [{value :value}]
-  (if (nil? value) "nil" (str value)))
+  (if (nil? value) "nil" (str/trim (prn-str value))))
 
 (def sample )
 
