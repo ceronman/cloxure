@@ -1,7 +1,7 @@
 (ns cloxure.core
-  (:require [cloxure.ast :as ast])
   (:require [cloxure.scanner :as scanner])
-  (:require [cloxure.parser :as parser]))
+  (:require [cloxure.parser :as parser])
+  (:require [cloxure.interpreter :as interpreter]))
 
 (defn error [message code]
   (binding [*out* *err*]
@@ -15,7 +15,7 @@
       (let [{errors :errors expr :expr} (parser/parse tokens)]
         (if (seq errors) 
           (println "ERROR" (prn-str errors))
-          (println (ast/pretty-print expr)))))))
+          (interpreter/interpret expr))))))
 
 (defn run-file [filename]
   (try
