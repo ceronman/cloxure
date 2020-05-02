@@ -14,6 +14,9 @@
 (defn group [expression]
   {:type :group :expression expression})
 
+(defn print-stmt [expression]
+  {:type :print-stmt :expression expression})
+
 (defmulti pretty-print
   "Converts an AST to string using a lisp-like notatation" 
   :type)

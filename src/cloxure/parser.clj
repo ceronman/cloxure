@@ -5,21 +5,27 @@
 ;; Grammar
 ;; -----------------------------------------------------------------
 ;; 
+;;    program   → statement* EOF ;
+;;    statement → exprStmt
+;;                | printStmt ;
+;;    exprStmt  → expression ";" ;
+;;    printStmt → "print" expression ";" ;
 ;;    expression     → equality ;
 ;;    equality       → comparison (("!=" | "==") comparison) * ;
 ;;    comparison     → addition ((">" | ">=" | "<" | "<=") addition) * ;
 ;;    addition       → multiplication (("-" | "+") multiplication) * ;
 ;;    multiplication → unary (("/" | "*") unary) * ;
 ;;    unary          → ("!" | "-") unary
-;;                   | primary ;
+;;                     | primary ;
 ;;    primary        → NUMBER | STRING | "false" | "true" | "nil"
-;;                   | "(" expression ")" ;
+;;                     | "(" expression ")" ;
 ;;                
 ;;------------------------------------------------------------------
 
 (defn- new-parser [tokens]
   {:tokens tokens 
    :errors []
+   :statements []
    :current 0
    :expr nil})
 
@@ -27,7 +33,7 @@
   (nth (:tokens parser) (:current parser)))
 
 (defn- is-at-end? [parser]
-  (>= (:current parser) (count (:tokens parser))))
+  (= (:type (current-token parser)) :eof))
 
 (defn- advance [parser]
   (update parser :current inc))
@@ -47,6 +53,13 @@
   (if (check? parser token-type)
     (advance parser)
     (error parser (current-token parser) message)))
+
+(defn- synchronize [parser]
+  (cond (is-at-end? parser) parser
+        (match? parser :semicolon) (advance parser)
+        (match? parser 
+                :class :fun :var :for :if :while :print :return) parser
+        :else (recur (advance parser))))
 
 (defn- add-expr [parser expr]
   (assoc parser :expr expr))
@@ -97,29 +110,54 @@
 (defn- expression [parser]
   (equality parser))
 
+(defn- print-stmt [parser]
+  (let [after-expression (expression parser)
+        after-semicolon (consume after-expression :semicolon "Expect ';' after value.")]
+    (add-expr after-semicolon (ast/print-stmt (:expr after-expression)))))
+
+(defn- expression-stmt [parser]
+  (let [after-expression (expression parser)
+        after-semicolon (consume after-expression :semicolon "Expect ';' after value.")]
+    (add-expr after-semicolon (:expr after-semicolon))))
+
+(defn- statement [parser]
+  (if (match? parser :print)
+    (print-stmt (advance parser))
+    (expression-stmt parser)))
+
+(defn- dbg [{tokens :tokens current :current}]
+  (println (reduce str (map-indexed (fn [i t] (format (if (= i current) " [%s] " " %s ") (:text t))) tokens))))
+
 (defn parse [tokens]
-  (try
-    (expression (new-parser tokens))
-    (catch clojure.lang.ExceptionInfo e
-      (ex-data e))))
+  (loop [parser (new-parser tokens)]
+    (if (is-at-end? parser)
+      parser
+      (recur
+       (try
+         (let [after-statement (statement parser)]
+           (-> after-statement
+               (update :statements conj (:expr after-statement))
+               (assoc :expr nil)))
+         (catch clojure.lang.ExceptionInfo e
+           (synchronize (ex-data e))))))))
 
 (defn- test-parser [code]
   (let [{errors :errors tokens :tokens} (scanner/scan code)]
     (if (seq errors)
       errors
-      (let [{errors :errors expr :expr} (parse tokens)]
-        (if (seq errors) 
+      (let [{errors :errors statements :statements} (parse tokens)]
+        (if (seq errors)
           errors
-          (ast/pretty-print expr))))))
+          (map ast/pretty-print statements))))))
 
 (comment (test-parser "\""))
-(comment (test-parser "1"))
-(comment (test-parser "1+2"))
-(comment (test-parser "1 == 1"))
-(comment (test-parser "1 + 2 * 3 + 4"))
-(comment (test-parser "true != false"))
-(comment (test-parser "(1 + 2) * 3"))
-(comment (test-parser "1++"))
+(comment (test-parser "1;2;3;\"hello\";"))
+(comment (test-parser "1+2;"))
+(comment (test-parser "1 == 1;"))
+(comment (test-parser "1 + 2 * 3 + 4;"))
+(comment (test-parser "true != false;"))
+(comment (test-parser "(1 + 2) * 3;"))
+(comment (test-parser "1++;2++; "))
 (comment (test-parser "1+2"))
 (comment (test-parser "(100 + 200 + 1"))
 (comment (test-parser "1)"))
