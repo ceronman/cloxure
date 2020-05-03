@@ -12,10 +12,10 @@
   (let [{errors :errors tokens :tokens} (scanner/scan source)]
     (if (seq errors)
       (println "ERROR" (prn-str errors))
-      (let [{errors :errors expr :expr} (parser/parse tokens)]
+      (let [{errors :errors statements :statements} (parser/parse tokens)]
         (if (seq errors) 
           (println "ERROR" (prn-str errors))
-          (interpreter/interpret expr))))))
+          (interpreter/interpret statements))))))
 
 (defn run-file [filename]
   (try

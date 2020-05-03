@@ -52,9 +52,27 @@
       :slash (/ (require-num left) (require-num right))
       :star (* (require-num left) (require-num right)))))
 
-(defn interpret [expr]
-  (try
-    (let [value (evaluate expr)]
-      (prn value))
-    (catch clojure.lang.ExceptionInfo e
-      (println "ERROR" (.getMessage e) (prn-str (ex-data e))))))
+(defmethod evaluate :print-stmt [{e :expression}]
+  (println (evaluate e)))
+
+(defn interpret [statements]
+  (doseq [stmt statements]
+    (try
+      (evaluate stmt)
+      (catch clojure.lang.ExceptionInfo e
+        (println "ERROR" (.getMessage e) (prn-str (ex-data e)))))))
+
+
+(require '[cloxure.scanner :as scanner])
+(require '[cloxure.parser :as parser])
+
+(defn- test-interpreter [code]
+  (let [{errors :errors tokens :tokens} (scanner/scan code)]
+    (if (seq errors)
+      errors
+      (let [{errors :errors statements :statements} (parser/parse tokens)]
+        (if (seq errors)
+          errors
+          (interpret statements))))))
+
+(comment (test-interpreter "print 1; print 2; print \"hello\";"))
