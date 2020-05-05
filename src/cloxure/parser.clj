@@ -5,7 +5,9 @@
 ;; Grammar
 ;; -----------------------------------------------------------------
 ;; 
-;;    program   → statement* EOF ;
+;;    program     → declaration* EOF ;
+;;    declaration → varDecl
+;;                  | statement ;
 ;;    statement → exprStmt
 ;;                | printStmt ;
 ;;    exprStmt  → expression ";" ;
@@ -18,7 +20,8 @@
 ;;    unary          → ("!" | "-") unary
 ;;                     | primary ;
 ;;    primary        → NUMBER | STRING | "false" | "true" | "nil"
-;;                     | "(" expression ")" ;
+;;                     | "(" expression ")" 
+;;                     | IDENTIFIER ;
 ;;                
 ;;------------------------------------------------------------------
 
@@ -75,6 +78,7 @@
     (match? parser :true) (add-literal parser true)
     (match? parser :nil) (add-literal parser nil)
     (match? parser :number :string) (add-literal parser (:literal (current-token parser)))
+    (match? parser :identifier) (advance (add-expr parser (ast/variable (current-token parser))))
     (match? parser :lparen) (let [middle (expression (advance parser))]
                               (add-expr (consume middle :rparen "Expect ')' after expression.") 
                                         (ast/group (:expr middle))))
@@ -125,6 +129,22 @@
     (print-stmt (advance parser))
     (expression-stmt parser)))
 
+(defn- var-declaration [after-var]
+  (prn "var dec")
+  (let [after-identifier (consume after-var :identifier "Expect variable name.")
+        initializer? (match? after-identifier :equal)
+        before-semicolon (if initializer? (expression (advance after-identifier)) after-identifier)
+        after-semicolon (consume before-semicolon :semicolon "Expect ';' after value.")]
+    (prn after-identifier)
+    (add-expr after-semicolon (ast/var-stmt (current-token after-var)
+                                            (if initializer? (:expr before-semicolon) nil)))))
+
+(defn- declaration [parser]
+  (prn "declaration")
+  (if (match? parser :var)
+    (var-declaration (advance parser))
+    (statement parser)))
+
 (defn- dbg [{tokens :tokens current :current}]
   (println (reduce str (map-indexed (fn [i t] (format (if (= i current) " [%s] " " %s ") (:text t))) tokens))))
 
@@ -134,7 +154,7 @@
       parser
       (recur
        (try
-         (let [after-statement (statement parser)]
+         (let [after-statement (declaration parser)]
            (-> after-statement
                (update :statements conj (:expr after-statement))
                (assoc :expr nil)))
@@ -157,6 +177,8 @@
 (comment (test-parser "1 + 2 * 3 + 4;"))
 (comment (test-parser "true != false;"))
 (comment (test-parser "(1 + 2) * 3;"))
+(comment (test-parser "var hello;"))
+(comment (test-parser "var hello = 1;"))
 (comment (test-parser "1++;2++;"))
 (comment (test-parser "print 1; print 2;"))
 (comment (test-parser "1+2;"))
