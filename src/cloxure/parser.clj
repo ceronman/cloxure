@@ -130,17 +130,14 @@
     (expression-stmt parser)))
 
 (defn- var-declaration [after-var]
-  (prn "var dec")
   (let [after-identifier (consume after-var :identifier "Expect variable name.")
         initializer? (match? after-identifier :equal)
         before-semicolon (if initializer? (expression (advance after-identifier)) after-identifier)
         after-semicolon (consume before-semicolon :semicolon "Expect ';' after value.")]
-    (prn after-identifier)
     (add-expr after-semicolon (ast/var-stmt (current-token after-var)
                                             (if initializer? (:expr before-semicolon) nil)))))
 
 (defn- declaration [parser]
-  (prn "declaration")
   (if (match? parser :var)
     (var-declaration (advance parser))
     (statement parser)))

@@ -21,7 +21,6 @@
   {:type :print-stmt :expression expression})
 
 (defn var-stmt [name-token initializer]
-  (prn name-token initializer)
   {:type :var-stmt :name-token name-token :initializer initializer})
 
 (defmulti pretty-print
@@ -51,9 +50,6 @@
 
 (defmethod pretty-print :var-stmt [{n :name-token i :initializer}]
   (format "(var %s = %s)" (:text n) (pretty-print i)))
-
-(defmethod pretty-print nil [{n :name-token e :expression}]
-  "!!!NIL!!!")
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")
