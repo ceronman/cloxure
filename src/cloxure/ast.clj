@@ -49,7 +49,9 @@
   (parenthesize "print" e))
 
 (defmethod pretty-print :var-stmt [{n :name-token i :initializer}]
-  (format "(var %s = %s)" (:text n) (pretty-print i)))
+  (if (nil? i) 
+    (format "(var %s)" (:text n))
+    (format "(var %s = %s)" (:text n) (pretty-print i))))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

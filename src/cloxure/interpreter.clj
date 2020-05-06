@@ -1,14 +1,23 @@
 (ns cloxure.interpreter)
 
+(defn- runtime-error [message]
+  (throw (ex-info message {:type :runtime})))
+
+(defn- env-get [env token-name]
+  (let [name (:text token-name)]
+    (if (contains? env name)
+      (get env name)
+      (runtime-error (format "Undefined variable %s" name)))))
+
 (defmulti evaluate
   "Interprets a Lox AST"
-  :type)
+  (fn [node _] (:type node)))
 
-(defmethod evaluate :literal [literal]
-  (:value literal))
+(defmethod evaluate :literal [literal env]
+  [(:value literal) env])
 
-(defmethod evaluate :group [group]
-  (evaluate (:expression group)))
+(defmethod evaluate :group [group env]
+  (evaluate (:expression group) env))
 
 (defn- truthy? [value]
   (cond
@@ -16,52 +25,59 @@
     (instance? Boolean value) value
     :else true))
 
-(defmethod evaluate :unary [unary]
-  (let [value (evaluate (:right unary))
+(defmethod evaluate :unary [unary env]
+  (let [[value env] (evaluate (:right unary) env)
         op (:type (:operator unary))]
-    (case op
-      :minus (- value)
-      :bang (not (truthy? value)))))
+    [(case op
+       :minus (- value)
+       :bang (not (truthy? value)))
+     env]))
 
 (defn- require-num [value]
   (if (instance? Double value)
     value
-    (throw (ex-info "Operand must be a number" {:type :runtime}))))
+    (runtime-error "Operand must be a number")))
 
-(defmethod evaluate :binary [binary]
-  (let [left (evaluate (:left binary))
-        right (evaluate (:right binary))
+(defmethod evaluate :binary [binary env]
+  (let [[left env] (evaluate (:left binary) env)
+        [right env] (evaluate (:right binary) env)
         op (:type (:operator binary))]
-    (case op
-      :bang_equal (not= left right)
-      :equal_equal (= left right)
-      :greater (> (require-num left) (require-num right))
-      :greater_equal (>= (require-num left) (require-num right))
-      :less (< (require-num left) (require-num right))
-      :less_equal (<= (require-num left) (require-num right))
-      :minus (- (require-num left) (require-num right))
-      :plus (cond 
-              (and (instance? Double left) (instance? Double right))
-              (+ left right)
-              (and (instance? String left) (instance? String right))
-              (str left right)
-              :else 
-              (throw (ex-info 
-                      "Operands must be two numbers or two strings." 
-                      {:type :runtime})))
-      :slash (/ (require-num left) (require-num right))
-      :star (* (require-num left) (require-num right)))))
+    [(case op
+       :bang_equal (not= left right)
+       :equal_equal (= left right)
+       :greater (> (require-num left) (require-num right))
+       :greater_equal (>= (require-num left) (require-num right))
+       :less (< (require-num left) (require-num right))
+       :less_equal (<= (require-num left) (require-num right))
+       :minus (- (require-num left) (require-num right))
+       :plus (cond 
+               (and (instance? Double left) (instance? Double right))
+               (+ left right)
+               (and (instance? String left) (instance? String right))
+               (str left right)
+               :else 
+               (runtime-error "Operands must be two numbers or two strings."))
+       :slash (/ (require-num left) (require-num right))
+       :star (* (require-num left) (require-num right)))
+     env]))
 
-(defmethod evaluate :print-stmt [{e :expression}]
-  (println (evaluate e)))
+(defmethod evaluate :print-stmt [{e :expression} env]
+  (let [[value env] (evaluate e env)]
+    [(println value) env]))
 
 (defn interpret [statements]
-  (doseq [stmt statements]
-    (try
-      (evaluate stmt)
-      (catch clojure.lang.ExceptionInfo e
-        (println "ERROR" (.getMessage e) (prn-str (ex-data e)))))))
-
+  (loop [statements statements
+         env {}]
+    (when (seq statements)
+      (let [stmt (first statements)
+            _ (prn stmt)
+            [value env] (try
+                          (evaluate stmt env)
+                          (catch clojure.lang.ExceptionInfo e
+                            (println "ERROR" (.getMessage e) (prn-str (ex-data e)))
+                            [nil env]))]
+        (prn value)
+        (recur (rest statements) env)))))
 
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
@@ -75,4 +91,4 @@
           errors
           (interpret statements))))))
 
-(comment (test-interpreter "print 1; print 2; print \"hello\";"))
+(comment (test-interpreter "print 1; print 2; print \"hello\"; print 1 + 2; 10 + 20;"))
