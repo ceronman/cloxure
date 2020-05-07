@@ -176,6 +176,7 @@
 (comment (test-parser "(1 + 2) * 3;"))
 (comment (test-parser "var hello;"))
 (comment (test-parser "var hello = 1;"))
+(comment (test-parser "var hello = 1 + 2;"))
 (comment (test-parser "1++;2++;"))
 (comment (test-parser "print 1; print 2;"))
 (comment (test-parser "1+2;"))

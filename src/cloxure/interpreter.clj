@@ -65,19 +65,25 @@
   (let [[value env] (evaluate e env)]
     [(println value) env]))
 
-(defn interpret [statements]
-  (loop [statements statements
-         env {}]
-    (when (seq statements)
-      (let [stmt (first statements)
-            _ (prn stmt)
-            [value env] (try
-                          (evaluate stmt env)
-                          (catch clojure.lang.ExceptionInfo e
-                            (println "ERROR" (.getMessage e) (prn-str (ex-data e)))
-                            [nil env]))]
-        (prn value)
-        (recur (rest statements) env)))))
+(defmethod evaluate :var-stmt [var-stmt env]
+  (let [name (:text (:name-token var-stmt))
+        [value env] (evaluate (:initializer var-stmt) env)]
+    [nil (assoc env name value)]))
+
+(defmethod evaluate :variable [var env]
+  [(env-get env (:name-token var)) env])
+
+(defn interpret [statements env]
+  (if (empty? statements)
+    env
+    (let [stmt (first statements)
+          [value env] (try
+                        (evaluate stmt env)
+                        (catch clojure.lang.ExceptionInfo e
+                          (println "ERROR" (.getMessage e) (prn-str (ex-data e)))
+                          [nil env]))]
+      (prn value)
+      (recur (rest statements) env))))
 
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
@@ -89,6 +95,16 @@
       (let [{errors :errors statements :statements} (parser/parse tokens)]
         (if (seq errors)
           errors
-          (interpret statements))))))
+          (interpret statements {}))))))
 
-(comment (test-interpreter "print 1; print 2; print \"hello\"; print 1 + 2; 10 + 20;"))
+(comment 
+  (test-interpreter 
+   "print 1; print 2; print \"hello\"; print 1 + 2; 10 + 20;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; var b = 2; print a + b;"))
+
+(comment
+  (test-interpreter
+   "var part1 = \"hello \"; var part2 = \"world\"; print part1 + part2;"))

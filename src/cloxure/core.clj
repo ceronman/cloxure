@@ -8,29 +8,30 @@
     (println message)
     (System/exit code)))
 
-(defn run [source]
+(defn run [source env]
   (let [{errors :errors tokens :tokens} (scanner/scan source)]
     (if (seq errors)
       (println "ERROR" (prn-str errors))
       (let [{errors :errors statements :statements} (parser/parse tokens)]
         (if (seq errors) 
           (println "ERROR" (prn-str errors))
-          (interpreter/interpret statements))))))
+          (interpreter/interpret statements env))))))
 
 (defn run-file [filename]
   (try
     (let [source (slurp filename)]
-      (run source))
+      (run source {}))
     (catch java.io.FileNotFoundException e 
       (error (.getMessage e) 65))))
 
-(defn run-prompt []
-  (print "> ")
-  (flush)
-  (let [line (read-line)]
-    (when line
-      (run line) 
-      (recur))))
+(defn- run-prompt []
+  (loop [env {}]
+    (print "> ")
+    (flush)
+    (let [line (read-line)]
+      (when line
+        (recur (run line env))))))
+
 
 (defn -main [& args]
   (cond
