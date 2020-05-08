@@ -23,6 +23,11 @@
 (defn var-stmt [name-token initializer]
   {:type :var-stmt :name-token name-token :initializer initializer})
 
+(defn assign [name-token value-expr]
+  {:type :assign :name-token name-token :value-expr value-expr})
+
+
+
 (defmulti pretty-print
   "Converts an AST to string using a lisp-like notatation" 
   :type)
@@ -42,8 +47,8 @@
 (defmethod pretty-print :literal [{value :value}]
   (if (nil? value) "nil" (str/trim (prn-str value))))
 
-(defmethod pretty-print :variable [{token-name :token-name}]
-  (str "$" (:text token-name)))
+(defmethod pretty-print :variable [{name-token :name-token}]
+  (:text name-token))
 
 (defmethod pretty-print :print-stmt [{e :expression}]
   (parenthesize "print" e))
@@ -52,6 +57,9 @@
   (if (nil? i) 
     (format "(var %s)" (:text n))
     (format "(var %s = %s)" (:text n) (pretty-print i))))
+
+(defmethod pretty-print :assign [{n :name-token v :value-expr}]
+  (format "(%s = %s)" (:text n) (pretty-print v)))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

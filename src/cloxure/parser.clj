@@ -5,14 +5,17 @@
 ;; Grammar
 ;; -----------------------------------------------------------------
 ;; 
-;;    program     → declaration* EOF ;
-;;    declaration → varDecl
-;;                  | statement ;
-;;    statement → exprStmt
-;;                | printStmt ;
-;;    exprStmt  → expression ";" ;
-;;    printStmt → "print" expression ";" ;
-;;    expression     → equality ;
+;;    program        → declaration* EOF ;
+;;    declaration    → varDecl
+;;                     | statement ;
+;;    statement      → exprStmt
+;;                     | printStmt ;
+;;    exprStmt       → expression ";" ;
+;;    printStmt      → "print" expression ";" ;
+;;    varDecl        → "var" IDENTIFIER ("=" expression) ? ";" ;
+;;    expression     → assignment ;
+;;    assignment     → IDENTIFIER "=" assignment
+;;                     | equality ;
 ;;    equality       → comparison (("!=" | "==") comparison) * ;
 ;;    comparison     → addition ((">" | ">=" | "<" | "<=") addition) * ;
 ;;    addition       → multiplication (("-" | "+") multiplication) * ;
@@ -111,8 +114,19 @@
 (defn- equality [parser]
   (binary* parser comparison :bang_equal :equal_equal))
 
+(defn- assignment [parser]
+  (let [left (equality parser)
+        left-expr (:expr left)]
+    (if (match? left :equal)
+      (let [after-equals (advance left)
+            after-value (assignment after-equals)]
+        (if (= (:type left-expr) :variable)
+          (add-expr after-value (ast/assign (:name-token left-expr) (:expr after-value)))
+          (error after-equals (current-token after-equals) "Invalid assignment target.")))
+      left)))
+
 (defn- expression [parser]
-  (equality parser))
+  (assignment parser))
 
 (defn- print-stmt [parser]
   (let [after-expression (expression parser)
@@ -168,6 +182,10 @@
           (map ast/pretty-print statements))))))
 
 (comment (test-parser "\""))
+(comment (test-parser "1;"))
+(comment (test-parser "var a = 1; a = 2;"))
+(comment (test-parser "var a = 1; a+b = 1;"))
+(comment (test-parser "var a = 1; print a;"))
 (comment (test-parser "1;2;3;\"hello\";"))
 (comment (test-parser "1+2;"))
 (comment (test-parser "1 == 1;"))
