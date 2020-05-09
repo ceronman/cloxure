@@ -11,8 +11,8 @@
 (defn literal [value]
   {:type :literal :value value})
 
-(defn variable [token-name]
-  {:type :variable :name-token token-name})
+(defn variable [name-token]
+  {:type :variable :name-token name-token})
 
 (defn group [expression]
   {:type :group :expression expression})

@@ -11,10 +11,10 @@
 (defn run [source env]
   (let [{errors :errors tokens :tokens} (scanner/scan source)]
     (if (seq errors)
-      (println "ERROR" (prn-str errors))
+      (do (println "ERROR" (prn-str errors)) env)
       (let [{errors :errors statements :statements} (parser/parse tokens)]
         (if (seq errors) 
-          (println "ERROR" (prn-str errors))
+          (do (println "ERROR" (prn-str errors)) env)
           (interpreter/interpret statements env))))))
 
 (defn run-file [filename]

@@ -3,10 +3,19 @@
 (defn- runtime-error [message]
   (throw (ex-info message {:type :runtime})))
 
-(defn- env-get [env token-name]
-  (let [name (:text token-name)]
+(defn- env-get [env name-token]
+  (let [name (:text name-token)]
     (if (contains? env name)
       (get env name)
+      (runtime-error (format "Undefined variable %s" name)))))
+
+(defn- env-define [env name-token value]
+  (assoc env (:text name-token) value))
+
+(defn- env-assign [env name-token value]
+  (let [name (:text name-token)]
+    (if (contains? env name)
+      (assoc env name value)
       (runtime-error (format "Undefined variable %s" name)))))
 
 (defmulti evaluate
@@ -66,12 +75,17 @@
     [(println value) env]))
 
 (defmethod evaluate :var-stmt [var-stmt env]
-  (let [name (:text (:name-token var-stmt))
+  (let [name-token (:name-token var-stmt)
         [value env] (evaluate (:initializer var-stmt) env)]
-    [nil (assoc env name value)]))
+    [nil (env-define env name-token value)]))
 
 (defmethod evaluate :variable [var env]
   [(env-get env (:name-token var)) env])
+
+(defmethod evaluate :assign [assign env]
+  (let [{name-token :name-token value-expr :value-expr} assign
+        [value env] (evaluate value-expr env)]
+    [value (env-assign env name-token value)]))
 
 (defn interpret [statements env]
   (if (empty? statements)
@@ -104,6 +118,14 @@
 (comment
   (test-interpreter
    "var a = 1; var b = 2; print a + b;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; a = 3; print a;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; b = 2; print a;"))
 
 (comment
   (test-interpreter
