@@ -163,3 +163,7 @@
 (comment
   (test-interpreter
    "var a = 1; { a = 2; { var a = 3; print a; }} print a;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; { var a = a + 1; print a; } print a;"))
