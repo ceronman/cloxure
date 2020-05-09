@@ -7,7 +7,9 @@
   (let [name (:text name-token)]
     (if (contains? env name)
       (get env name)
-      (runtime-error (format "Undefined variable %s" name)))))
+      (if-let [enclosing (:enclosing env)]
+        (env-get enclosing name-token)
+        (runtime-error (format "Undefined variable %s" name))))))
 
 (defn- env-define [env name-token value]
   (assoc env (:text name-token) value))
@@ -16,7 +18,12 @@
   (let [name (:text name-token)]
     (if (contains? env name)
       (assoc env name value)
-      (runtime-error (format "Undefined variable %s" name)))))
+      (if (:enclosing env)
+        (update env :enclosing env-assign name-token value)
+        (runtime-error (format "Undefined variable %s" name))))))
+
+(defn- env-enclosed [env]
+  {:enclosing env})
 
 (defmulti evaluate
   "Interprets a Lox AST"
@@ -87,6 +94,15 @@
         [value env] (evaluate value-expr env)]
     [value (env-assign env name-token value)]))
 
+(defmethod evaluate :block [block env]
+  (loop [statements (:statements block)
+         env (env-enclosed env)]
+    (if (empty? statements)
+      [nil (:enclosing env)]
+      (let [stmt (first statements)
+            [_ env] (evaluate stmt env)]
+        (recur (rest statements) env)))))
+
 (defn interpret [statements env]
   (if (empty? statements)
     env
@@ -125,8 +141,25 @@
 
 (comment
   (test-interpreter
-   "var a = 1; b = 2; print a;"))
+   "var a = 1; b = 3; print a;"))
 
 (comment
   (test-interpreter
    "var part1 = \"hello \"; var part2 = \"world\"; print part1 + part2;"))
+
+
+(comment
+  (test-interpreter
+   "var a = 1; { var a = 2; print a;} print a;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; { a = 2; } print a;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; { a = 2; { a = 3; }} print a;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; { a = 2; { var a = 3; print a; }} print a;"))

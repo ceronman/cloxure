@@ -26,6 +26,9 @@
 (defn assign [name-token value-expr]
   {:type :assign :name-token name-token :value-expr value-expr})
 
+(defn block [statements]
+  {:type :block :statements statements})
+
 
 
 (defmulti pretty-print
@@ -60,6 +63,9 @@
 
 (defmethod pretty-print :assign [{n :name-token v :value-expr}]
   (format "(%s = %s)" (:text n) (pretty-print v)))
+
+(defmethod pretty-print :block [{s :statements}]
+  (str "{ " (str/join "; " (map pretty-print s))  " }"))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

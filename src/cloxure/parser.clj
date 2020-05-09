@@ -9,7 +9,9 @@
 ;;    declaration    → varDecl
 ;;                     | statement ;
 ;;    statement      → exprStmt
-;;                     | printStmt ;
+;;                     | printStmt
+;;                     | block ;
+;;    block          → "{" declaration* "}" ;
 ;;    exprStmt       → expression ";" ;
 ;;    printStmt      → "print" expression ";" ;
 ;;    varDecl        → "var" IDENTIFIER ("=" expression) ? ";" ;
@@ -138,10 +140,22 @@
         after-semicolon (consume after-expression :semicolon "Expect ';' after value.")]
     (add-expr after-semicolon (:expr after-semicolon))))
 
+(declare declaration)
+
+(defn- block [parser]
+  (loop [parser parser
+         statements []]
+    (if (check? parser :rbrace)
+      (add-expr (consume parser :rbrace "Expect '}' after block.")
+                (ast/block statements))
+      (let [after-declaration (declaration parser)]
+        (recur after-declaration (conj statements (:expr after-declaration)))))))
+
 (defn- statement [parser]
-  (if (match? parser :print)
-    (print-stmt (advance parser))
-    (expression-stmt parser)))
+  (cond 
+    (match? parser :print) (print-stmt (advance parser))
+    (match? parser :lbrace) (block (advance parser))
+    :else (expression-stmt parser)))
 
 (defn- var-declaration [after-var]
   (let [after-identifier (consume after-var :identifier "Expect variable name.")
@@ -179,7 +193,8 @@
       (let [{errors :errors statements :statements} (parse tokens)]
         (if (seq errors)
           errors
-          (map ast/pretty-print statements))))))
+          (doseq [s statements]
+            (println (ast/pretty-print s))))))))
 
 (comment (test-parser "\""))
 (comment (test-parser "1;"))
@@ -202,5 +217,8 @@
 (comment (test-parser "1)"))
 (comment (test-parser "(1 + nil)"))
 (comment (test-parser "\"hello\" == \"world\""))
+(comment (test-parser "{}"))
+(comment (test-parser "{1; 2; 3;}"))
+(comment (test-parser "{print 1+2;}"))
 
 
