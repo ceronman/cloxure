@@ -29,6 +29,9 @@
 (defn block [statements]
   {:type :block :statements statements})
 
+(defn if-stmt [condition, then-branch, else-branch]
+  {:type :if-stmt :condition condition :then-branch then-branch :else-branch else-branch})
+
 
 
 (defmulti pretty-print
@@ -65,7 +68,13 @@
   (format "(%s = %s)" (:text n) (pretty-print v)))
 
 (defmethod pretty-print :block [{s :statements}]
-  (str "{ " (str/join "; " (map pretty-print s))  " }"))
+  (str "(block " (str/join " " (map pretty-print s))  ")"))
+
+(defmethod pretty-print :if-stmt [{c :condition t :then-branch e :else-branch}]
+  (format "(if (%s) %s %s)"
+          (pretty-print c)
+          (pretty-print t)
+          (if (nil? e) "nil" (pretty-print e))))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

@@ -9,8 +9,10 @@
 ;;    declaration    → varDecl
 ;;                     | statement ;
 ;;    statement      → exprStmt
+;;                     | ifStmt
 ;;                     | printStmt
 ;;                     | block ;
+;;    ifStmt         → "if" "(" expression ")" statement ("else" statement) ? ;
 ;;    block          → "{" declaration* "}" ;
 ;;    exprStmt       → expression ";" ;
 ;;    printStmt      → "print" expression ";" ;
@@ -151,8 +153,11 @@
       (let [after-declaration (declaration parser)]
         (recur after-declaration (conj statements (:expr after-declaration)))))))
 
+(declare if-stmt)
+
 (defn- statement [parser]
   (cond 
+    (match? parser :if) (if-stmt (advance parser))
     (match? parser :print) (print-stmt (advance parser))
     (match? parser :lbrace) (block (advance parser))
     :else (expression-stmt parser)))
@@ -169,6 +174,20 @@
   (if (match? parser :var)
     (var-declaration (advance parser))
     (statement parser)))
+
+(defn- if-stmt [parser]
+  (let [after-lparen (consume parser :lparen 
+                              "Expect '(' after 'if'.")
+        condition (expression after-lparen)
+        after-rparen (consume condition :rparen 
+                              "Expect ')' after if condition.")
+        after-then (statement after-rparen)
+        after-else (when (check? after-then :else)
+                      (statement (advance after-then)))]
+    (add-expr (or after-else after-then)
+              (ast/if-stmt (:expr condition)
+                           (:expr after-then)
+                           (:expr after-else)))))
 
 (defn- dbg [{tokens :tokens current :current}]
   (println (reduce str (map-indexed (fn [i t] (format (if (= i current) " [%s] " " %s ") (:text t))) tokens))))
@@ -220,5 +239,14 @@
 (comment (test-parser "{}"))
 (comment (test-parser "{1; 2; 3;}"))
 (comment (test-parser "{print 1+2;}"))
+(comment (test-parser "if (true) print 1; else print 2;"))
+(comment (test-parser "if (true) print 1;"))
+(comment (test-parser "if (true) {print 1; print 2;}"))
+(comment (test-parser "if (true) {print 1; print 2;} else { print 3; }"))
+(comment (test-parser "if (true print 1;"))
+(comment (test-parser "if (print 1;)"))
+(comment (test-parser "else"))
+(comment (test-parser "if (true) if (false) print 1; else print 2;"))
+
 
 
