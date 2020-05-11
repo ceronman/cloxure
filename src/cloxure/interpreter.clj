@@ -103,6 +103,14 @@
             [_ env] (evaluate stmt env)]
         (recur (rest statements) env)))))
 
+(defmethod evaluate :if-stmt [stmt env]
+  (let [[value env] (evaluate (:condition stmt) env)]
+    (if (truthy? value)
+      (evaluate (:then-branch stmt) env)
+      (if-let [else (:else-branch stmt)]
+        (evaluate else env)
+        [nil env]))))
+
 (defn interpret [statements env]
   (if (empty? statements)
     env
@@ -167,3 +175,19 @@
 (comment
   (test-interpreter
    "var a = 1; { var a = a + 1; print a; } print a;"))
+
+(comment
+  (test-interpreter
+   "if (1 == 2) print \"equal\"; else print \"not equal\";"))
+
+(comment
+  (test-interpreter
+   "if (true) { print 1; print 2;}"))
+
+(comment
+  (test-interpreter
+   "if (false) { print 1; print 2;} else print 3;"))
+
+(comment
+  (test-interpreter
+   "var a = 1; if (a == 1) { print 1; print 2;} else print 3;"))
