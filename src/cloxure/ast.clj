@@ -11,6 +11,9 @@
 (defn literal [value]
   {:type :literal :value value})
 
+(defn logical [left operator right]
+  {:type :logical :left left :right right :operator operator})
+
 (defn variable [name-token]
   {:type :variable :name-token name-token})
 
@@ -42,6 +45,9 @@
   (str "(" name " " (str/join " " (map pretty-print expressions)) ")"))
 
 (defmethod pretty-print :binary [{op :operator l :left r :right}]
+  (parenthesize (:text op) l r))
+
+(defmethod pretty-print :logical [{op :operator l :left r :right}]
   (parenthesize (:text op) l r))
 
 (defmethod pretty-print :unary [{op :operator r :right}]

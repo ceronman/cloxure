@@ -18,8 +18,10 @@
 ;;    printStmt      → "print" expression ";" ;
 ;;    varDecl        → "var" IDENTIFIER ("=" expression) ? ";" ;
 ;;    expression     → assignment ;
-;;    assignment     → IDENTIFIER "=" assignment
-;;                     | equality ;
+;;    assignment     → identifier "=" assignment
+;;                     | logic_or ;
+;;    logic_or       → logic_and ("or" logic_and) * ;
+;;    logic_and      → equality ("and" equality) * ;
 ;;    equality       → comparison (("!=" | "==") comparison) * ;
 ;;    comparison     → addition ((">" | ">=" | "<" | "<=") addition) * ;
 ;;    addition       → multiplication (("-" | "+") multiplication) * ;
@@ -118,8 +120,22 @@
 (defn- equality [parser]
   (binary* parser comparison :bang_equal :equal_equal))
 
+(defn- logical* [parser base-expr & operators]
+  (loop [left (base-expr parser)]
+    (if (apply match? left operators)
+      (let [op (current-token left)
+            right (base-expr (advance left))]
+        (recur (add-expr right (ast/logical (:expr left) op (:expr right)))))
+      left)))
+
+(defn- logical-and [parser]
+  (logical* parser equality :and))
+
+(defn- logical-or [parser]
+  (logical* parser logical-and :or))
+
 (defn- assignment [parser]
-  (let [left (equality parser)
+  (let [left (logical-or parser)
         left-expr (:expr left)]
     (if (match? left :equal)
       (let [after-equals (advance left)
@@ -247,6 +263,7 @@
 (comment (test-parser "if (print 1;)"))
 (comment (test-parser "else"))
 (comment (test-parser "if (true) if (false) print 1; else print 2;"))
+(comment (test-parser "a == 1 or b == 2 and b > 3;"))
 
 
 

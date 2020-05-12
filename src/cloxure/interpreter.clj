@@ -77,6 +77,15 @@
        :star (* (require-num left) (require-num right)))
      env]))
 
+(defmethod evaluate :logical [logical env]
+  (let [[left env] (evaluate (:left logical) env)
+        op (:type (:operator logical))
+        left-truthy (truthy? left)]
+    (cond
+      (and (= op :or) left-truthy) [left env]
+      (and (= op :and) (not left-truthy)) [left env]
+      :else (evaluate (:right logical) env))))
+
 (defmethod evaluate :print-stmt [{e :expression} env]
   (let [[value env] (evaluate e env)]
     [(println value) env]))
@@ -191,3 +200,7 @@
 (comment
   (test-interpreter
    "var a = 1; if (a == 1) { print 1; print 2;} else print 3;"))
+
+(comment
+  (test-interpreter
+   "var a = true; var b = false; print a or b; print a and b;"))
