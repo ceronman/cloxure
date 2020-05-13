@@ -11,11 +11,13 @@
 ;;    statement      → exprStmt
 ;;                     | ifStmt
 ;;                     | printStmt
+;;                     | whileStmt
 ;;                     | block ;
-;;    ifStmt         → "if" "(" expression ")" statement ("else" statement) ? ;
-;;    block          → "{" declaration* "}" ;
 ;;    exprStmt       → expression ";" ;
+;;    ifStmt         → "if" "(" expression ")" statement ("else" statement) ? ;
 ;;    printStmt      → "print" expression ";" ;
+;;    whileStmt      → "while" "(" expression ")" statement ;
+;;    block          → "{" declaration* "}" ;
 ;;    varDecl        → "var" IDENTIFIER ("=" expression) ? ";" ;
 ;;    expression     → assignment ;
 ;;    assignment     → identifier "=" assignment
@@ -170,11 +172,13 @@
         (recur after-declaration (conj statements (:expr after-declaration)))))))
 
 (declare if-stmt)
+(declare while-stmt)
 
 (defn- statement [parser]
   (cond 
     (match? parser :if) (if-stmt (advance parser))
     (match? parser :print) (print-stmt (advance parser))
+    (match? parser :while) (while-stmt (advance parser))
     (match? parser :lbrace) (block (advance parser))
     :else (expression-stmt parser)))
 
@@ -205,8 +209,14 @@
                            (:expr after-then)
                            (:expr after-else)))))
 
-(defn- dbg [{tokens :tokens current :current}]
-  (println (reduce str (map-indexed (fn [i t] (format (if (= i current) " [%s] " " %s ") (:text t))) tokens))))
+(defn- while-stmt [parser]
+  (let [after-lparen (consume parser :lparen "Expect '(' after 'while'.")
+        condition (expression after-lparen)
+        after-rparen (consume condition :rparen "Expect ')' after condition.")
+        after-body (statement after-rparen)]
+    (add-expr after-body 
+              (ast/while-stmt (:expr condition) 
+                              (:expr after-body)))))
 
 (defn parse [tokens]
   (loop [parser (new-parser tokens)]
@@ -264,6 +274,9 @@
 (comment (test-parser "else"))
 (comment (test-parser "if (true) if (false) print 1; else print 2;"))
 (comment (test-parser "a == 1 or b == 2 and b > 3;"))
+(comment (test-parser "while (true) print 1;"))
+(comment (test-parser "while (true) { print 1; print 2; }"))
+(comment (test-parser "while 1 == 2 { print 1; print 2; }"))
 
 
 

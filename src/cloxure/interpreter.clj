@@ -120,6 +120,13 @@
         (evaluate else env)
         [nil env]))))
 
+(defmethod evaluate :while-stmt [stmt env]
+  (let [[value env] (evaluate (:condition stmt) env)]
+    (if (truthy? value)
+      (let [[_ env] (evaluate (:body stmt) env)]
+        (recur stmt env))
+      [nil env])))
+
 (defn interpret [statements env]
   (if (empty? statements)
     env
@@ -204,3 +211,15 @@
 (comment
   (test-interpreter
    "var a = true; var b = false; print a or b; print a and b;"))
+
+(comment
+  (test-interpreter
+   "var i = 0; while (i < 5) { i = i + 1; print i;} print \"end\";"))
+
+(comment
+  (test-interpreter
+   "var i = 0; while (i != 0) { print \"not\"; } print \"end\";"))
+
+(comment
+  (test-interpreter
+   "var i = 0; while (i < 5) { b = 2; }"))
