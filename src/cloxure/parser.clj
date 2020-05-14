@@ -9,6 +9,7 @@
 ;;    declaration    → varDecl
 ;;                     | statement ;
 ;;    statement      → exprStmt
+;;                     | forStmt
 ;;                     | ifStmt
 ;;                     | printStmt
 ;;                     | whileStmt
@@ -17,6 +18,9 @@
 ;;    ifStmt         → "if" "(" expression ")" statement ("else" statement) ? ;
 ;;    printStmt      → "print" expression ";" ;
 ;;    whileStmt      → "while" "(" expression ")" statement ;
+;;    forStmt        → "for" "(" (varDecl | exprStmt | ";")
+;;                               expression? ";"
+;;                               expression? ")" statement ;
 ;;    block          → "{" declaration* "}" ;
 ;;    varDecl        → "var" IDENTIFIER ("=" expression) ? ";" ;
 ;;    expression     → assignment ;
@@ -173,9 +177,11 @@
 
 (declare if-stmt)
 (declare while-stmt)
+(declare for-stmt)
 
 (defn- statement [parser]
   (cond 
+    (match? parser :for) (for-stmt (advance parser))
     (match? parser :if) (if-stmt (advance parser))
     (match? parser :print) (print-stmt (advance parser))
     (match? parser :while) (while-stmt (advance parser))
@@ -217,6 +223,30 @@
     (add-expr after-body 
               (ast/while-stmt (:expr condition) 
                               (:expr after-body)))))
+
+(defn- for-stmt [parser]
+  (let [after-lparen (consume parser :lparen "Expect '(' after 'for'.")
+        initializer (cond
+                      (match? after-lparen :semicolon) (advance (add-expr after-lparen nil))
+                      (match? after-lparen :var) (var-declaration (advance after-lparen))
+                      :else (expression-stmt after-lparen))
+        condition (if (match? initializer :semicolon)
+                    (add-literal initializer true)
+                    (expression-stmt initializer))
+        increment (if (match? condition :rparen)
+                    (add-expr condition nil)
+                    (expression condition))
+        after-rparen (consume increment :rparen "Expect ')' after for clauses.")
+        body (statement after-rparen)
+        expr (:expr body)
+        expr (if-let [increment-expr (:expr increment)]
+               (ast/block [expr increment-expr])
+               expr)
+        expr (ast/while-stmt (:expr condition) expr)
+        expr (if-let [initializer-expr (:expr initializer)]
+               (ast/block [initializer-expr expr])
+               expr)]
+    (add-expr body expr)))
 
 (defn parse [tokens]
   (loop [parser (new-parser tokens)]
@@ -277,6 +307,11 @@
 (comment (test-parser "while (true) print 1;"))
 (comment (test-parser "while (true) { print 1; print 2; }"))
 (comment (test-parser "while 1 == 2 { print 1; print 2; }"))
+(comment (test-parser "for (;;) print 1;"))
+(comment (test-parser "for (i = 0; i < 10; i = i + 1) print i;"))
+(comment (test-parser "for (var i = 0; i < 10; i = i + 1) print i;"))
+(comment (test-parser "var i = 0; for (; i < 10; ) print i;"))
+
 
 
 

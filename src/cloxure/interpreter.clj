@@ -223,3 +223,7 @@
 (comment
   (test-interpreter
    "var i = 0; while (i < 5) { b = 2; }"))
+
+(comment
+  (test-interpreter
+   "for (var i = 0; i < 5; i = i + 1) { print i; }"))
