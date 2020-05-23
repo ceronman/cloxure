@@ -24,7 +24,7 @@
          scopes (:scopes resolver)]
     (cond
       (empty? scopes) resolver
-()      (contains? (peek scopes) (:text name-token)) (add-local resolver node pos)
+      (contains? (peek scopes) (:text name-token)) (add-local resolver node pos)
       :else (recur (inc pos) (rest scopes)))))
 
 (defmulti resolve-locals
@@ -57,15 +57,42 @@
     (resolve-local resolver node name-token)))
 
 (defmethod resolve-locals :assign [resolver node]
-  (let [resolver (resolve-locals resolver (:value-expr node))]
-    (resolve-local resolver node (:name-token node))))
+  (-> resolver
+      (resolve-locals (:value-expr node))
+      (resolve-local node (:name-token node))))
 
 (defmethod resolve-locals :if-stmt [resolver node]
-  (let [resolver (resolve-locals resolver (:condition node))
-        resolver (resolve-locals resolver (:then-branch node))]
-    (if-let [else-branch (:else-branch node)]
-      (resolve-locals resolver else-branch)
-      resolver)))
+  (-> resolver
+      (resolve-locals (:condition node))
+      (resolve-locals (:then-branch node))
+      (cond-> (:else-branch node) (resolve-locals (:else-branch node)))))
+
+(defmethod resolve-locals :print-stmt [resolver node]
+  (-> resolver (resolve-locals (:expression node))))
+
+(defmethod resolve-locals :while-stmt [resolver node]
+  (-> resolver
+      (resolve-locals (:condition node))
+      (resolve-locals (:body node))))
+
+(defmethod resolve-locals :binary [resolver node]
+  (-> resolver
+      (resolve-locals (:left node))
+      (resolve-locals (:right node))))
+
+(defmethod resolve-locals :logical [resolver node]
+  (-> resolver
+      (resolve-locals (:left node))
+      (resolve-locals (:right node))))
+
+(defmethod resolve-locals :unary [resolver node]
+  (-> resolver (resolve-locals (:right node))))
+
+(defmethod resolve-locals :group [resolver node]
+  (-> resolver (resolve-locals (:expression node))))
+
+(defmethod resolve-locals :literal [resolver _]
+  resolver)
 
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
@@ -99,3 +126,15 @@
 
 (comment (test-resolver
           "{ var a; if (a) { a = b; } }"))
+
+(comment (test-resolver
+          "{ var a; if (a) { a = b; } else { a = c; }}"))
+
+(comment (test-resolver
+          "{ var a; print a; }"))
+
+(comment (test-resolver
+          "{ var a; { print a; } }"))
+
+(comment (test-resolver
+          "{ var a; { a + b; a or a; while (true) {a;} !a; (a); 1;} }"))
