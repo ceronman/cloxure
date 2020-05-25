@@ -80,7 +80,8 @@
         :else (recur (advance parser))))
 
 (defn- add-expr [parser expr]
-  (assoc parser :expr expr))
+  (let [expr (assoc expr :loc (:current parser))]
+    (assoc parser :expr expr)))
 
 (defn- add-literal [parser value]
   (advance (add-expr parser (ast/literal value))))

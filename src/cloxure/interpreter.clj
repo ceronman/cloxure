@@ -1,5 +1,11 @@
 (ns cloxure.interpreter)
 
+(defn- new-state [locals]
+  {:result nil
+   :environment nil
+   :globals {}
+   :locals locals})
+
 (defn- runtime-error [message]
   (throw (ex-info message {:type :runtime})))
 
@@ -7,33 +13,44 @@
   (let [name (:text name-token)]
     (if (contains? env name)
       (get env name)
-      (if-let [enclosing (:enclosing env)]
-        (env-get enclosing name-token)
-        (runtime-error (format "Undefined variable %s" name))))))
+      (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- env-define [env name-token value]
-  (assoc env (:text name-token) value))
+(defn- env-get-at [env name-token distance]
+  (if (zero? distance)
+    (env-get env name-token)
+    (recur (:enclosing env) name-token (dec distance))))
 
 (defn- env-assign [env name-token value]
   (let [name (:text name-token)]
     (if (contains? env name)
       (assoc env name value)
-      (if (:enclosing env)
-        (update env :enclosing env-assign name-token value)
-        (runtime-error (format "Undefined variable %s" name))))))
+      (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- env-enclosed [env]
-  {:enclosing env})
+(defn- env-assign-at [env name-token distance value]
+  (if (zero? distance)
+    (env-assign env name-token value)
+    (update env :enclosing env-assign-at name-token (dec distance) value)))
 
-(defmulti evaluate
-  "Interprets a Lox AST"
-  (fn [node _] (:type node)))
+(defn- declare-variable [state name-token value]
+  (if (:environment state)
+    (update state :environment assoc (:text name-token) value)
+    (update state :globals assoc (:text name-token) value)))
 
-(defmethod evaluate :literal [literal env]
-  [(:value literal) env])
+(defn- lookup-variable [state name-token expr]
+  (if-let [distance (get-in state [:locals expr])]
+    (assoc state :result (env-get-at (:environment state) name-token distance))
+    (assoc state :result (env-get (:globals state) name-token))))
 
-(defmethod evaluate :group [group env]
-  (evaluate (:expression group) env))
+(defn- assign-variable [state name-token expr value]
+  (if-let [distance (get-in state [:locals expr])]
+    (update state :environment env-assign-at name-token distance value)
+    (update state :globals env-assign name-token value)))
+
+(defn- push-scope [state]
+  (assoc state :environment {:enclosing (:environment state)}))
+
+(defn- pop-scope [state]
+  (assoc state :environment (:enclosing (:environment state))))
 
 (defn- truthy? [value]
   (cond
@@ -41,106 +58,123 @@
     (instance? Boolean value) value
     :else true))
 
-(defmethod evaluate :unary [unary env]
-  (let [[value env] (evaluate (:right unary) env)
-        op (:type (:operator unary))]
-    [(case op
-       :minus (- value)
-       :bang (not (truthy? value)))
-     env]))
-
 (defn- require-num [value]
   (if (instance? Double value)
     value
     (runtime-error "Operand must be a number")))
 
-(defmethod evaluate :binary [binary env]
-  (let [[left env] (evaluate (:left binary) env)
-        [right env] (evaluate (:right binary) env)
-        op (:type (:operator binary))]
-    [(case op
-       :bang_equal (not= left right)
-       :equal_equal (= left right)
-       :greater (> (require-num left) (require-num right))
-       :greater_equal (>= (require-num left) (require-num right))
-       :less (< (require-num left) (require-num right))
-       :less_equal (<= (require-num left) (require-num right))
-       :minus (- (require-num left) (require-num right))
-       :plus (cond 
-               (and (instance? Double left) (instance? Double right))
-               (+ left right)
-               (and (instance? String left) (instance? String right))
-               (str left right)
-               :else 
-               (runtime-error "Operands must be two numbers or two strings."))
-       :slash (/ (require-num left) (require-num right))
-       :star (* (require-num left) (require-num right)))
-     env]))
+(defmulti evaluate
+  "Interprets a Lox AST"
+  (fn [_ node] (:type node)))
 
-(defmethod evaluate :logical [logical env]
-  (let [[left env] (evaluate (:left logical) env)
-        op (:type (:operator logical))
-        left-truthy (truthy? left)]
+(defmethod evaluate :literal [state literal-expr]
+  (assoc state :result (:value literal-expr)))
+
+(defmethod evaluate :group [state group-expr]
+  (evaluate state (:expression group-expr)))
+
+(defmethod evaluate :unary [state unary-expr]
+  (let [state (evaluate state (:right unary-expr))
+        right (:result state)
+        operator (:type (:operator unary-expr))]
+    (assoc state :result (case operator
+                           :minus (- right)
+                           :bang (not (truthy? right))))))
+
+(defmethod evaluate :binary [state binary-expr]
+  (let [state (evaluate state (:left binary-expr))
+        left (:result state)
+        state (evaluate state (:right binary-expr))
+        right (:result state)
+        operator (:type (:operator binary-expr))]
+    (assoc state :result
+           (case operator
+             :bang_equal (not= left right)
+             :equal_equal (= left right)
+             :greater (> (require-num left) (require-num right))
+             :greater_equal (>= (require-num left) (require-num right))
+             :less (< (require-num left) (require-num right))
+             :less_equal (<= (require-num left) (require-num right))
+             :minus (- (require-num left) (require-num right))
+             :plus (cond
+                     (and (instance? Double left) (instance? Double right))
+                     (+ left right)
+                     (and (instance? String left) (instance? String right))
+                     (str left right)
+                     :else
+                     (runtime-error "Operands must be two numbers or two strings."))
+             :slash (/ (require-num left) (require-num right))
+             :star (* (require-num left) (require-num right))))))
+
+(defmethod evaluate :logical [state logical-expr]
+  (let [state (evaluate state (:left logical-expr))
+        left (:result state)
+        operator (:type (:operator logical-expr))
+        left-truthy? (truthy? left)]
     (cond
-      (and (= op :or) left-truthy) [left env]
-      (and (= op :and) (not left-truthy)) [left env]
-      :else (evaluate (:right logical) env))))
+      (and (= operator :or) left-truthy?) state
+      (and (= operator :and) (not left-truthy?)) state
+      :else (evaluate state (:right logical-expr)))))
 
-(defmethod evaluate :print-stmt [{e :expression} env]
-  (let [[value env] (evaluate e env)]
-    [(println value) env]))
+(defmethod evaluate :print-stmt [state print-stmt]
+  (let [state (evaluate state (:expression print-stmt))]
+    (assoc state :result (println (:result state)))))
 
-(defmethod evaluate :var-stmt [var-stmt env]
-  (let [name-token (:name-token var-stmt)
-        [value env] (evaluate (:initializer var-stmt) env)]
-    [nil (env-define env name-token value)]))
+(defmethod evaluate :var-stmt [state var-stmt]
+  (let [initializer (:initializer var-stmt)
+        state (if initializer 
+                (evaluate state initializer) 
+                (assoc state :result nil))]
+    (-> state
+        (declare-variable (:name-token var-stmt) (:result state))
+        (assoc :result nil))))
 
-(defmethod evaluate :variable [var env]
-  [(env-get env (:name-token var)) env])
+(defmethod evaluate :variable [state var-expr]
+  (lookup-variable state (:name-token var-expr) var-expr))
 
-(defmethod evaluate :assign [assign env]
-  (let [{name-token :name-token value-expr :value-expr} assign
-        [value env] (evaluate value-expr env)]
-    [value (env-assign env name-token value)]))
+(defmethod evaluate :assign [state assign-expr]
+  (let [state (evaluate state (:value-expr assign-expr))
+        value (:result state)]
+    (assign-variable state (:name-token assign-expr) assign-expr value)))
 
-(defmethod evaluate :block [block env]
-  (loop [statements (:statements block)
-         env (env-enclosed env)]
+(defmethod evaluate :block [state block-stmt]
+  (loop [statements (:statements block-stmt)
+         state (push-scope state)]
     (if (empty? statements)
-      [nil (:enclosing env)]
-      (let [stmt (first statements)
-            [_ env] (evaluate stmt env)]
-        (recur (rest statements) env)))))
+      (-> state
+          (pop-scope)
+          (assoc :result nil))
+      (recur (rest statements) (evaluate state (first statements))))))
 
-(defmethod evaluate :if-stmt [stmt env]
-  (let [[value env] (evaluate (:condition stmt) env)]
-    (if (truthy? value)
-      (evaluate (:then-branch stmt) env)
-      (if-let [else (:else-branch stmt)]
-        (evaluate else env)
-        [nil env]))))
+(defmethod evaluate :if-stmt [state if-stmt]
+  (let [state (evaluate state (:condition if-stmt))]
+    (if (truthy? (:result state))
+      (evaluate state (:then-branch if-stmt))
+      (if-let [else-branch (:else-branch if-stmt)]
+        (evaluate state else-branch)
+        (assoc state :result nil)))))
 
-(defmethod evaluate :while-stmt [stmt env]
-  (let [[value env] (evaluate (:condition stmt) env)]
-    (if (truthy? value)
-      (let [[_ env] (evaluate (:body stmt) env)]
-        (recur stmt env))
-      [nil env])))
+(defmethod evaluate :while-stmt [state while-stmt]
+  (let [state (evaluate state (:condition while-stmt))]
+    (if (truthy? (:result state))
+      (recur (evaluate state (:body while-stmt)) while-stmt)
+      (assoc state :result nil))))
 
-(defn interpret [statements env]
-  (if (empty? statements)
-    env
-    (let [stmt (first statements)
-          [value env] (try
-                        (evaluate stmt env)
-                        (catch clojure.lang.ExceptionInfo e
-                          (println "ERROR" (.getMessage e) (prn-str (ex-data e)))
-                          [nil env]))]
-      (prn value)
-      (recur (rest statements) env))))
+(defn interpret [statements locals]
+  (loop [state (new-state locals)
+         statements statements]
+    (if (empty? statements)
+      (:result state)
+      (let [state (try 
+                    (evaluate state (first statements))
+                    (catch clojure.lang.ExceptionInfo e
+                      (println "ERROR" (.getMessage e) (prn-str (ex-data e)))
+                      (assoc state :result nil)))]
+        (recur state (rest statements))))))
 
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
+(require '[cloxure.resolver :as resolver])
 
 (defn- test-interpreter [code]
   (let [{errors :errors tokens :tokens} (scanner/scan code)]
@@ -149,11 +183,70 @@
       (let [{errors :errors statements :statements} (parser/parse tokens)]
         (if (seq errors)
           errors
-          (interpret statements {}))))))
+          (let [{errors :errors locals :locals} (resolver/locals statements)]
+            (if (seq errors)
+              errors
+              (interpret statements locals))))))))
 
-(comment 
-  (test-interpreter 
+(comment
+  (test-interpreter
+   "1;"))
+
+(comment
+  (test-interpreter
+   "1; true; \"hello\";"))
+
+(comment
+  (test-interpreter
+   "(2);"))
+
+(comment
+  (test-interpreter
+   "-4;"))
+
+(comment
+  (test-interpreter
+   "4 * 4;"))
+
+(comment
+  (test-interpreter
+   "true or false;"))
+
+(comment
+  (test-interpreter
+   "print 16;"))
+
+(comment
+  (test-interpreter
    "print 1; print 2; print \"hello\"; print 1 + 2; 10 + 20;"))
+
+(comment
+  (test-interpreter
+   "var a; a;"))
+
+(comment
+  (test-interpreter
+   "var a = 4; a * 5;"))
+
+(comment
+  (test-interpreter
+   "a = 4;"))
+
+(comment
+  (test-interpreter
+   "var a = 4; a = 2; a * 5;"))
+
+(comment
+  (test-interpreter
+   "{var a = 1; print a; a = a + 2; print a;}"))
+
+(comment
+  (test-interpreter
+   "{var a = 1; {var a = a + 1;}}"))
+
+(comment
+  (test-interpreter
+   "var a = 1; { var a = 2; print a;}"))
 
 (comment
   (test-interpreter

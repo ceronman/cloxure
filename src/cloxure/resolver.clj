@@ -31,7 +31,7 @@
   "Statically resolves scoping of variables"
   (fn [_ node] (:type node)))
 
-(defn resolve-statements [resolver statements]
+(defn- resolve-statements [resolver statements]
   (reduce resolve-locals resolver statements))
 
 (defmethod resolve-locals :block [resolver node]
@@ -97,6 +97,10 @@
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
 
+(defn locals [statements]
+  (-> (new-resolver)
+      (resolve-statements statements)))
+
 (defn- test-resolver [code]
   (let [{errors :errors tokens :tokens} (scanner/scan code)]
     (if (seq errors)
@@ -104,7 +108,7 @@
       (let [{errors :errors statements :statements} (parser/parse tokens)]
         (if (seq errors)
           errors
-          (let [{errors :errors locals :locals} (resolve-statements (new-resolver) statements)]
+          (let [{errors :errors locals :locals} (locals statements)]
             (if (seq errors)
               errors
               locals)))))))
