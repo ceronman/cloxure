@@ -32,8 +32,8 @@
 ;;    comparison     → addition ((">" | ">=" | "<" | "<=") addition) * ;
 ;;    addition       → multiplication (("-" | "+") multiplication) * ;
 ;;    multiplication → unary (("/" | "*") unary) * ;
-;;    unary          → ("!" | "-") unary
-;;                     | primary ;
+;;    unary          → ("!" | "-") unary | call ;
+;;    call           → primary ("(" arguments? ")") * ;
 ;;    primary        → NUMBER | STRING | "false" | "true" | "nil"
 ;;                     | "(" expression ")" 
 ;;                     | IDENTIFIER ;
@@ -88,7 +88,7 @@
 
 (declare expression)
 
-(defn- primary [parser]  
+(defn- primary [parser]
   (cond 
     (match? parser :false) (add-literal parser false)
     (match? parser :true) (add-literal parser true)
@@ -100,12 +100,30 @@
                                         (ast/group (:expr middle))))
     :else (error parser (current-token parser) "Expected expression")))
 
+(defn- finish-call [after-lparen callee]
+  (loop [parser after-lparen
+         arguments []]
+    (if (match? parser :rparen)
+      (add-expr (advance parser) (ast/call callee (current-token parser) arguments))
+      (let [after-arg (expression parser)
+            arguments (conj arguments (:expr after-arg))]
+        (if (match? after-arg :comma)
+          (recur (advance after-arg) arguments)
+          (let [after-rparen (consume after-arg :rparen "Expect ')' after arguments.")]
+            (add-expr after-rparen (ast/call callee (current-token after-arg) arguments))))))))
+
+(defn- call [parser]
+  (loop [parser (primary parser)]
+    (if (match? parser :lparen)
+      (recur (finish-call (advance parser) (:expr parser)))
+      parser)))
+
 (defn- unary [parser]
   (if (match? parser :bang :minus)
     (let [operator (current-token parser)
           right (unary (advance parser))]
       (add-expr right (ast/unary operator (:expr right))))
-    (primary parser)))
+    (call parser)))
 
 (defn- binary* [parser base-expr & operators]
   (loop [left (base-expr parser)]
@@ -312,7 +330,13 @@
 (comment (test-parser "for (i = 0; i < 10; i = i + 1) print i;"))
 (comment (test-parser "for (var i = 0; i < 10; i = i + 1) print i;"))
 (comment (test-parser "var i = 0; for (; i < 10; ) print i;"))
-
+(comment (test-parser "hello;"))
+(comment (test-parser "hello();"))
+(comment (test-parser "hello(1);"))
+(comment (test-parser "hello(1+2);"))
+(comment (test-parser "hello(1,2);"))
+(comment (test-parser "hello(1,2, true);"))
+(comment (test-parser "curry(1)(2)(3);"))
 
 
 

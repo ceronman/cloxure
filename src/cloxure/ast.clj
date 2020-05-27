@@ -5,6 +5,9 @@
 (defn binary [left operator right]
   {:type :binary :left left :right right :operator operator})
 
+(defn call [callee paren arguments]
+  {:type :call :callee callee :paren paren :arguments arguments})
+
 (defn unary [operator right]
   {:type :unary :operator operator :right right})
 
@@ -86,6 +89,11 @@
 
 (defmethod pretty-print :while-stmt [{c :condition b :body}]
   (parenthesize "while" c b))
+
+(defmethod pretty-print :call [{c :callee args :arguments}]
+  (format "(call %s [%s])"
+          (pretty-print c)
+          (str/join ", " (map pretty-print args))))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")
