@@ -94,6 +94,10 @@
 (defmethod resolve-locals :literal [resolver _]
   resolver)
 
+(defmethod resolve-locals :call [resolver call-expr]
+  (let [resolver (resolve-locals resolver (:callee call-expr))]
+    (reduce resolve-locals resolver (:arguments call-expr))))
+
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
 

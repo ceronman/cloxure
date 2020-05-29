@@ -1,9 +1,13 @@
 (ns cloxure.interpreter)
 
+(defn- lox-callable [arity f]
+  {:lox-fn f
+   :arity arity})
+
 (defn- new-state [locals]
   {:result nil
    :environment nil
-   :globals {}
+   :globals {"time" (lox-callable 0 #(/ (System/currentTimeMillis) 1000.0))}
    :locals locals})
 
 (defn- runtime-error [message]
@@ -46,6 +50,7 @@
     (update state :environment env-assign-at name-token distance value)
     (update state :globals env-assign name-token value)))
 
+
 (defn- push-scope [state]
   (assoc state :environment {:enclosing (:environment state)}))
 
@@ -57,6 +62,9 @@
     (nil? value) false
     (instance? Boolean value) value
     :else true))
+
+(defn- lox-fn? [value]
+  (and (map? value) (fn? (:lox-fn value))))
 
 (defn- require-num [value]
   (if (instance? Double value)
@@ -145,6 +153,26 @@
           (pop-scope)
           (assoc :result nil))
       (recur (rest statements) (evaluate state (first statements))))))
+
+(defmethod evaluate :call [state call-expr]
+  (let [state (evaluate state (:callee call-expr))
+        callee (:result state)
+        state (reduce
+               #(update %1 :result conj (:result %2))
+               (assoc state :result [])
+               (map evaluate (:arguments call-expr)))
+        arguments (:result state)]
+    (assoc state :result
+           (cond
+             (not (lox-fn? callee))
+             (runtime-error "Can only call functions and classes.")
+
+             (not= (:arity callee) (count arguments))
+             (runtime-error (format "Expected %d arguments but got %d"
+                                    (:arity callee)
+                                    (:count arguments)))
+
+             :else (apply (:lox-fn callee) arguments)))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -320,3 +348,11 @@
 (comment
   (test-interpreter
    "for (var i = 0; i < 5; i = i + 1) { print i; }"))
+
+(comment
+  (test-interpreter
+   "print time();"))
+
+(comment
+  (test-interpreter
+   "var before = time(); var i = 100000; while (i > 0) { i = i - 1; } print (time() - before);"))
