@@ -26,6 +26,9 @@
 (defn print-stmt [expression]
   {:type :print-stmt :expression expression})
 
+(defn return-stmt [keyword value]
+  {:type :return-stmt :keyword keyword :value value})
+
 (defn var-stmt [name-token initializer]
   {:type :var-stmt :name-token name-token :initializer initializer})
 
@@ -40,6 +43,9 @@
 
 (defn while-stmt [condition body]
   {:type :while-stmt :condition condition :body body})
+
+(defn fun-stmt [name params body]
+  {:type :fun-stmt :name name :params params :body body})
 
 
 
@@ -82,6 +88,9 @@
 (defmethod pretty-print :block [{s :statements}]
   (apply parenthesize "block" s))
 
+(defmethod pretty-print :return-stmt [{v :value}]
+  (format "(return %s)" (pretty-print v)))
+
 (defmethod pretty-print :if-stmt [{c :condition t :then-branch e :else-branch}]
   (if (nil? e)
     (parenthesize "if" c t)
@@ -94,6 +103,12 @@
   (format "(call %s [%s])"
           (pretty-print c)
           (str/join ", " (map pretty-print args))))
+
+(defmethod pretty-print :fun-stmt [{name :name params :params body :body}]
+  (format "(fun %s [%s] %s)"
+          (:text name)
+          (str/join ", " (map pretty-print params))
+          (str/join " " (map pretty-print body))))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

@@ -6,14 +6,20 @@
 ;; -----------------------------------------------------------------
 ;; 
 ;;    program        → declaration* EOF ;
-;;    declaration    → varDecl
+;;    declaration    → funDecl
+;;                     | varDecl
 ;;                     | statement ;
+;;    funDecl        → "fun" function ;
+;;    function       → IDENTIFIER "(" parameters? ")" block ;
+;;    parameters     → IDENTIFIER ("," IDENTIFIER) * ;
 ;;    statement      → exprStmt
 ;;                     | forStmt
 ;;                     | ifStmt
 ;;                     | printStmt
+;;                     | returnStmt
 ;;                     | whileStmt
 ;;                     | block ;
+;;    returnStmt     → "return" expression? ";" ;
 ;;    exprStmt       → expression ";" ;
 ;;    ifStmt         → "if" "(" expression ")" statement ("else" statement) ? ;
 ;;    printStmt      → "print" expression ";" ;
@@ -185,6 +191,15 @@
         after-semicolon (consume after-expression :semicolon "Expect ';' after value.")]
     (add-expr after-semicolon (ast/print-stmt (:expr after-expression)))))
 
+(defn- return-stmt [parser]
+  (let [keyword (current-token parser)
+        after-keyword (advance parser)
+        after-value (if (match? after-keyword :semicolon)
+                      (assoc after-keyword :expr (ast/literal nil))
+                      (expression after-keyword))
+        after-semicolon (consume after-value :semicolon "Expect ';' after return value.")]
+    (add-expr after-semicolon (ast/return-stmt keyword (:expr after-value)))))
+
 (defn- expression-stmt [parser]
   (let [after-expression (expression parser)
         after-semicolon (consume after-expression :semicolon "Expect ';' after value.")]
@@ -206,10 +221,12 @@
 (declare for-stmt)
 
 (defn- statement [parser]
+  ; TODO use condp?
   (cond 
     (match? parser :for) (for-stmt (advance parser))
     (match? parser :if) (if-stmt (advance parser))
     (match? parser :print) (print-stmt (advance parser))
+    (match? parser :return) (return-stmt parser)
     (match? parser :while) (while-stmt (advance parser))
     (match? parser :lbrace) (block (advance parser))
     :else (expression-stmt parser)))
@@ -221,11 +238,37 @@
         after-semicolon (consume before-semicolon :semicolon "Expect ';' after value.")]
     (add-expr after-semicolon (ast/var-stmt (current-token after-var)
                                             (if initializer? (:expr before-semicolon) nil)))))
+(defn- parameters [after-lparen]
+  (if (match? after-lparen :rparen)
+    [(advance after-lparen) []]
+    (loop [parser after-lparen
+           params []]
+      (let [after-param (consume parser :identifier "Expect parameter name.")
+            after-param (if (>= (count params) 255)
+                          (add-error after-param "Cannot have more than 255 parameters.")
+                          after-param)
+            params (conj params (current-token parser))]
+        (if (match? after-param :comma)
+          (recur (advance after-param) params)
+          [(consume after-param :rparen "Expect ')' after parameters.") params])))))
+
+(defn- function [after-fun kind]
+  (let [after-name (consume after-fun :identifier
+                            (str "Expect " kind " name."))
+        name (current-token after-fun)
+        after-lparen (consume after-name :lparen
+                              (str "Expect '(' after " kind " name."))
+        [after-rparen params] (parameters after-lparen)
+        after-lbrace (consume after-rparen :lbrace (str "Expect '{' before " kind " body."))
+        after-block (block after-lbrace)
+        body (:statements (:expr after-block))]
+    (add-expr after-block (ast/fun-stmt name params body))))
 
 (defn- declaration [parser]
-  (if (match? parser :var)
-    (var-declaration (advance parser))
-    (statement parser)))
+  (cond 
+    (match? parser :fun) (function (advance parser) "function")
+    (match? parser :var) (var-declaration (advance parser))
+    :else (statement parser)))
 
 (defn- if-stmt [parser]
   (let [after-lparen (consume parser :lparen 
@@ -359,6 +402,12 @@
                              209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,
                              225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,
                              241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256);"))
+
+(comment (test-parser "fun hello() { print 1; }"))
+(comment (test-parser "fun()"))
+(comment (test-parser "fun hello() {}"))
+(comment (test-parser "fun hello() { return; }"))
+(comment (test-parser "fun hello() { return 1; }"))
 
 
 

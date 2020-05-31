@@ -16,6 +16,9 @@
         (assoc resolver :scopes (conj others new-scope)))
       resolver)))
 
+(defn- add-vars [resolver name-tokens ready?]
+  (reduce #(add-var %1 %2 ready?) resolver name-tokens))
+
 (defn- add-local [resolver node pos]
   (update resolver :locals assoc node pos))
 
@@ -27,6 +30,11 @@
       (contains? (peek scopes) (:text name-token)) (add-local resolver node pos)
       :else (recur (inc pos) (rest scopes)))))
 
+(defn- with-scope [resolver f & args]
+  (let [resolver (update resolver :scopes conj {})
+        resolver (apply f resolver args)]
+    (update resolver :scopes pop)))
+
 (defmulti resolve-locals
   "Statically resolves scoping of variables"
   (fn [_ node] (:type node)))
@@ -35,9 +43,7 @@
   (reduce resolve-locals resolver statements))
 
 (defmethod resolve-locals :block [resolver node]
-  (let [resolver (update resolver :scopes conj {})
-        resolver (resolve-statements resolver (:statements node))]
-    (update resolver :scopes pop)))
+  (with-scope resolver resolve-statements (:statements node)))
 
 (defmethod resolve-locals :var-stmt [resolver node]
   (let [name-token (:name-token node)
@@ -60,6 +66,18 @@
   (-> resolver
       (resolve-locals (:value-expr node))
       (resolve-local node (:name-token node))))
+
+(defn- resolve-function [resolver fun-stmt]
+  (with-scope resolver 
+    (fn [resolver]
+      (-> resolver
+          (add-vars (:params fun-stmt) true)
+          (resolve-statements (:body fun-stmt))))))
+
+(defmethod resolve-locals :fun-stmt [resolver node]
+  (-> resolver
+      (add-var (:name node) true)
+      (resolve-function node)))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
@@ -146,3 +164,6 @@
 
 (comment (test-resolver
           "{ var a; { a + b; a or a; while (true) {a;} !a; (a); 1;} }"))
+
+(comment (test-resolver
+          "fun test(one, two) { print one; }"))
