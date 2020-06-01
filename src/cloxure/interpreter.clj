@@ -1,13 +1,19 @@
 (ns cloxure.interpreter)
 
-(defn- lox-callable [arity f]
-  {:lox-fn f
-   :arity arity})
+(defn- lox-callable [name arity f]
+  {:name name
+   :arity arity
+   :lox-fn f})
+
+(def time-builtin 
+  (lox-callable "time" 0 
+                (fn [state _] 
+                  (assoc state :result (/ (System/currentTimeMillis) 1000.0)))))
 
 (defn- new-state [locals]
   {:result nil
    :environment nil
-   :globals {"time" (lox-callable 0 #(/ (System/currentTimeMillis) 1000.0))}
+   :globals {"time" time-builtin}
    :locals locals})
 
 (defn- runtime-error [message]
@@ -145,6 +151,7 @@
         value (:result state)]
     (assign-variable state (:name-token assign-expr) assign-expr value)))
 
+; TODO: improve using reduce
 (defmethod evaluate :block [state block-stmt]
   (loop [statements (:statements block-stmt)
          state (push-scope state)]
@@ -154,25 +161,30 @@
           (assoc :result nil))
       (recur (rest statements) (evaluate state (first statements))))))
 
+(defn- evaluate-args [state args]
+  (reduce 
+   (fn [state arg]
+     (let [all-results (:result state)
+           state (evaluate state arg)]
+       (assoc state :result (conj all-results (:result state)))))
+   (assoc state :result [])
+   args))
+
 (defmethod evaluate :call [state call-expr]
   (let [state (evaluate state (:callee call-expr))
         callee (:result state)
-        state (reduce
-               #(update %1 :result conj (:result %2))
-               (assoc state :result [])
-               (map evaluate (:arguments call-expr)))
+        state (evaluate-args state (:arguments call-expr))
         arguments (:result state)]
-    (assoc state :result
-           (cond
-             (not (lox-fn? callee))
-             (runtime-error "Can only call functions and classes.")
+    (cond
+      (not (lox-fn? callee))
+      (runtime-error "Can only call functions and classes.")
 
-             (not= (:arity callee) (count arguments))
-             (runtime-error (format "Expected %d arguments but got %d"
-                                    (:arity callee)
-                                    (:count arguments)))
+      (not= (:arity callee) (count arguments))
+      (runtime-error (format "Expected %d arguments but got %d"
+                             (:arity callee)
+                             (count arguments)))
 
-             :else (apply (:lox-fn callee) arguments)))))
+      :else ((:lox-fn callee) state arguments))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -188,6 +200,42 @@
       (recur (evaluate state (:body while-stmt)) while-stmt)
       (assoc state :result nil))))
 
+(defn- declare-fn-args [state params args]
+  (reduce (fn [state i]
+            (declare-variable state (nth params i) (nth args i)))
+          state
+          (range (count params))))
+
+(defn- execute-fn-body [state statements]
+  (try
+    (let [state (reduce evaluate state statements)]
+      (assoc state :result nil))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{type :type state :state} (ex-data e)]
+        (if (= type :return) 
+          state 
+          (throw e))))))
+
+(defn- lox-function [fun-stmt]
+  (let [{:keys [name params body]} fun-stmt]
+    (lox-callable
+     (:text name)
+     (count params)
+     (fn [state args]
+       (-> state
+         (push-scope)
+         (declare-fn-args params args)
+         (execute-fn-body body)
+         (pop-scope))))))
+
+(defmethod evaluate :fun-stmt [state fun-stmt]
+  (let [f (lox-function fun-stmt)]
+    (declare-variable state (:name fun-stmt) f)))
+
+(defmethod evaluate :return-stmt [state return-stmt]
+  (throw (ex-info "return" {:type :return
+                            :state (evaluate state (:value return-stmt))})))
+
 (defn interpret [statements locals]
   (loop [state (new-state locals)
          statements statements]
@@ -196,7 +244,7 @@
       (let [state (try 
                     (evaluate state (first statements))
                     (catch clojure.lang.ExceptionInfo e
-                      (println "ERROR" (.getMessage e) (prn-str (ex-data e)))
+                      (println "ERROR" (ex-message e) (prn-str (ex-data e)))
                       (assoc state :result nil)))]
         (recur state (rest statements))))))
 
@@ -356,3 +404,44 @@
 (comment
   (test-interpreter
    "var before = time(); var i = 100000; while (i > 0) { i = i - 1; } print (time() - before);"))
+
+
+(comment
+  (test-interpreter
+   "fun hello() { print \"hello\"; } hello();"))
+
+(comment
+  (test-interpreter
+   "fun hello(name) { print name; } hello();"))
+
+(comment
+  (test-interpreter
+   "fun hello(name) { print name; } hello(\"manuel\");"))
+
+(comment
+  (test-interpreter
+   "fun sum(a, b) { print a + b; } sum(4);"))
+
+(comment
+  (test-interpreter
+   "fun sum(a, b) { print a + b; } sum(4, 5);"))
+
+(comment
+  (test-interpreter
+   "var a = 10; fun sum1(b) { var a = 1; print a + b; } sum1(4); print a;"))
+
+(comment
+  (test-interpreter
+   "fun sum(a, b) { return a + b; } print sum(4, 6);"))
+
+(comment
+  (test-interpreter
+   "fun test(age) { if (age > 18 ) return; return \"old!\"; } print test(1); print test(20);"))
+
+(comment
+  (test-interpreter
+   "fun test(age) { return; } print test(1);"))
+
+(comment
+  (test-interpreter
+   "return 20;"))

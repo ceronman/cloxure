@@ -3,7 +3,8 @@
 (defn- new-resolver []
   {:scopes '()
    :locals {}
-   :errors []})
+   :errors []
+   :current-fn nil})
 
 (defn- error [resolver token message]
   (let [e {:line (:line token) :message message :loc (:text token)}]
@@ -67,17 +68,20 @@
       (resolve-locals (:value-expr node))
       (resolve-local node (:name-token node))))
 
-(defn- resolve-function [resolver fun-stmt]
-  (with-scope resolver 
-    (fn [resolver]
-      (-> resolver
-          (add-vars (:params fun-stmt) true)
-          (resolve-statements (:body fun-stmt))))))
+(defn- resolve-function [resolver fun-stmt fn-type]
+  (let [current-fn (:current-fn resolver)]
+    (with-scope resolver 
+      (fn [resolver]
+        (-> resolver
+            (assoc :current-fn fn-type)
+            (add-vars (:params fun-stmt) true)
+            (resolve-statements (:body fun-stmt))
+            (assoc :current-fn current-fn))))))
 
 (defmethod resolve-locals :fun-stmt [resolver node]
   (-> resolver
       (add-var (:name node) true)
-      (resolve-function node)))
+      (resolve-function node :function)))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
@@ -115,6 +119,13 @@
 (defmethod resolve-locals :call [resolver call-expr]
   (let [resolver (resolve-locals resolver (:callee call-expr))]
     (reduce resolve-locals resolver (:arguments call-expr))))
+
+(defmethod resolve-locals :return-stmt [resolver return-stmt]
+  (if (nil? (:current-fn resolver))
+    (error resolver
+           (:keyword return-stmt)
+           "Cannot return from top-level code.")
+    (resolve-locals resolver (:value return-stmt))))
 
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
