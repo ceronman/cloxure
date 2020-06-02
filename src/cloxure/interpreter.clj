@@ -6,14 +6,17 @@
    :lox-fn f})
 
 (def time-builtin 
-  (lox-callable "time" 0 
-                (fn [state _] 
-                  (assoc state :result (/ (System/currentTimeMillis) 1000.0)))))
+  (lox-callable
+   "time" 0
+   (fn [state _]
+     (assoc state :result (/ (System/currentTimeMillis) 1000.0)))))
+
+(def builtins
+  {"time" time-builtin})
 
 (defn- new-state [locals]
   {:result nil
-   :environment nil
-   :globals {"time" time-builtin}
+   :environments [builtins]
    :locals locals})
 
 (defn- runtime-error [message]
@@ -25,43 +28,36 @@
       (get env name)
       (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- env-get-at [env name-token distance]
-  (if (zero? distance)
-    (env-get env name-token)
-    (recur (:enclosing env) name-token (dec distance))))
-
 (defn- env-assign [env name-token value]
   (let [name (:text name-token)]
     (if (contains? env name)
       (assoc env name value)
       (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- env-assign-at [env name-token distance value]
-  (if (zero? distance)
-    (env-assign env name-token value)
-    (update env :enclosing env-assign-at name-token (dec distance) value)))
-
 (defn- declare-variable [state name-token value]
-  (if (:environment state)
-    (update state :environment assoc (:text name-token) value)
-    (update state :globals assoc (:text name-token) value)))
+  (let [environments (:environments state)
+        env-idx (dec (count environments))]
+    (update-in state [:environments env-idx] assoc (:text name-token) value)))
 
 (defn- lookup-variable [state name-token expr]
-  (if-let [distance (get-in state [:locals expr])]
-    (assoc state :result (env-get-at (:environment state) name-token distance))
-    (assoc state :result (env-get (:globals state) name-token))))
+  (let [environments (:environments state)
+        depth (dec (count environments))
+        distance (get-in state [:locals expr] depth)
+        env (nth environments (- depth distance))]
+    (assoc state :result (env-get env name-token))))
 
 (defn- assign-variable [state name-token expr value]
-  (if-let [distance (get-in state [:locals expr])]
-    (update state :environment env-assign-at name-token distance value)
-    (update state :globals env-assign name-token value)))
-
+  (let [environments (:environments state)
+        depth (dec (count environments))
+        distance (get-in state [:locals expr] depth)
+        env-idx (- depth distance)]
+    (update-in state [:environments env-idx] env-assign name-token value)))
 
 (defn- push-scope [state]
-  (assoc state :environment {:enclosing (:environment state)}))
+  (update state :environments conj {}))
 
 (defn- pop-scope [state]
-  (assoc state :environment (:enclosing (:environment state))))
+  (update state :environments subvec 0 (dec (count (:environments state)))))
 
 (defn- truthy? [value]
   (cond
