@@ -15,49 +15,59 @@
   {"time" time-builtin})
 
 (defn- new-state [locals]
-  {:result nil
-   :environments [builtins]
-   :locals locals})
+  (let [globals (atom (assoc builtins :enclosing nil))]
+    {:result nil
+     :globals globals
+     :environment globals
+     :locals locals}))
 
 (defn- runtime-error [message]
   (throw (ex-info message {:type :runtime})))
 
+(defn env-ancestor [env distance]
+  (if (zero? distance)
+    env
+    (recur (:enclosing @env) (dec distance))))
+
 (defn- env-get [env name-token]
   (let [name (:text name-token)]
-    (if (contains? env name)
-      (get env name)
+    (if (contains? @env name)
+      (get @env name)
       (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- env-assign [env name-token value]
+(defn- env-assign! [env name-token value]
   (let [name (:text name-token)]
-    (if (contains? env name)
-      (assoc env name value)
+    (if (contains? @env name)
+      (swap! env assoc name value)
       (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- declare-variable [state name-token value]
-  (let [environments (:environments state)
-        env-idx (dec (count environments))]
-    (update-in state [:environments env-idx] assoc (:text name-token) value)))
+(defn- define-variable [state name-token value]
+  (let [env (:environment state)]
+    (swap! env assoc (:text name-token) value)
+    state))
 
 (defn- lookup-variable [state name-token expr]
-  (let [environments (:environments state)
-        depth (dec (count environments))
-        distance (get-in state [:locals expr] depth)
-        env (nth environments (- depth distance))]
+  (let [distance (get-in state [:locals expr])
+        env (if (nil? distance) 
+              (:globals state) 
+              (env-ancestor (:environment state) distance))]
     (assoc state :result (env-get env name-token))))
 
 (defn- assign-variable [state name-token expr value]
-  (let [environments (:environments state)
-        depth (dec (count environments))
-        distance (get-in state [:locals expr] depth)
-        env-idx (- depth distance)]
-    (update-in state [:environments env-idx] env-assign name-token value)))
+  (let [distance (get-in state [:locals expr])
+        env (if (nil? distance)
+              (:globals state)
+              (env-ancestor (:environment state) distance))]
+    (env-assign! env name-token value)
+    state))
 
 (defn- push-scope [state]
-  (update state :environments conj {}))
+  (let [env (:environment state)]
+    (assoc state :environment (atom {:enclosing env}))))
 
 (defn- pop-scope [state]
-  (update state :environments subvec 0 (dec (count (:environments state)))))
+  (let [env (:environment state)]
+    (assoc state :environment (:enclosing @env))))
 
 (defn- truthy? [value]
   (cond
@@ -136,7 +146,7 @@
                 (evaluate state initializer) 
                 (assoc state :result nil))]
     (-> state
-        (declare-variable (:name-token var-stmt) (:result state))
+        (define-variable (:name-token var-stmt) (:result state))
         (assoc :result nil))))
 
 (defmethod evaluate :variable [state var-expr]
@@ -198,7 +208,7 @@
 
 (defn- declare-fn-args [state params args]
   (reduce (fn [state i]
-            (declare-variable state (nth params i) (nth args i)))
+            (define-variable state (nth params i) (nth args i)))
           state
           (range (count params))))
 
@@ -226,7 +236,7 @@
 
 (defmethod evaluate :fun-stmt [state fun-stmt]
   (let [f (lox-function fun-stmt)]
-    (declare-variable state (:name fun-stmt) f)))
+    (define-variable state (:name fun-stmt) f)))
 
 (defmethod evaluate :return-stmt [state return-stmt]
   (throw (ex-info "return" {:type :return
