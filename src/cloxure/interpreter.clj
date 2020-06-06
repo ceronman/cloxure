@@ -41,7 +41,7 @@
       (swap! env assoc name value)
       (runtime-error (format "Undefined variable %s" name)))))
 
-(defn- define-variable [state name-token value]
+(defn- declare-variable [state name-token value]
   (let [env (:environment state)]
     (swap! env assoc (:text name-token) value)
     state))
@@ -61,13 +61,8 @@
     (env-assign! env name-token value)
     state))
 
-(defn- push-scope [state]
-  (let [env (:environment state)]
-    (assoc state :environment (atom {:enclosing env}))))
-
-(defn- pop-scope [state]
-  (let [env (:environment state)]
-    (assoc state :environment (:enclosing @env))))
+(defn- new-scope [parent-env]
+  (atom {:enclosing parent-env}))
 
 (defn- truthy? [value]
   (cond
@@ -146,7 +141,7 @@
                 (evaluate state initializer) 
                 (assoc state :result nil))]
     (-> state
-        (define-variable (:name-token var-stmt) (:result state))
+        (declare-variable (:name-token var-stmt) (:result state))
         (assoc :result nil))))
 
 (defmethod evaluate :variable [state var-expr]
@@ -157,15 +152,16 @@
         value (:result state)]
     (assign-variable state (:name-token assign-expr) assign-expr value)))
 
-; TODO: improve using reduce
+(defn- evaluate-statements [state statements]
+  (reduce evaluate state statements))
+
 (defmethod evaluate :block [state block-stmt]
-  (loop [statements (:statements block-stmt)
-         state (push-scope state)]
-    (if (empty? statements)
-      (-> state
-          (pop-scope)
-          (assoc :result nil))
-      (recur (rest statements) (evaluate state (first statements))))))
+  (let [env (:environment state)]
+    (-> state
+      (assoc :environment (new-scope env))
+      (evaluate-statements (:statements block-stmt))
+      (assoc :environment env)
+      (assoc :result nil))))
 
 (defn- evaluate-args [state args]
   (reduce 
@@ -208,35 +204,37 @@
 
 (defn- declare-fn-args [state params args]
   (reduce (fn [state i]
-            (define-variable state (nth params i) (nth args i)))
+            (declare-variable state (nth params i) (nth args i)))
           state
           (range (count params))))
 
 (defn- execute-fn-body [state statements]
   (try
-    (let [state (reduce evaluate state statements)]
-      (assoc state :result nil))
+    (-> state
+        (evaluate-statements statements)
+        (assoc :result nil))
     (catch clojure.lang.ExceptionInfo e
       (let [{type :type state :state} (ex-data e)]
         (if (= type :return) 
           state 
           (throw e))))))
 
-(defn- lox-function [fun-stmt]
+(defn- lox-function [fun-stmt closure]
   (let [{:keys [name params body]} fun-stmt]
     (lox-callable
      (:text name)
      (count params)
      (fn [state args]
-       (-> state
-         (push-scope)
-         (declare-fn-args params args)
-         (execute-fn-body body)
-         (pop-scope))))))
+       (let [env (:environment state)]
+         (-> state
+             (assoc :environment (new-scope closure))
+             (declare-fn-args params args)
+             (execute-fn-body body)
+             (assoc :environment env)))))))
 
 (defmethod evaluate :fun-stmt [state fun-stmt]
-  (let [f (lox-function fun-stmt)]
-    (define-variable state (:name fun-stmt) f)))
+  (let [f (lox-function fun-stmt (:environment state))]
+    (declare-variable state (:name fun-stmt) f)))
 
 (defmethod evaluate :return-stmt [state return-stmt]
   (throw (ex-info "return" {:type :return
@@ -247,6 +245,7 @@
          statements statements]
     (if (empty? statements)
       (:result state)
+      ;; TODO: replace with reduce?
       (let [state (try 
                     (evaluate state (first statements))
                     (catch clojure.lang.ExceptionInfo e
@@ -451,3 +450,43 @@
 (comment
   (test-interpreter
    "return 20;"))
+
+(comment
+  (test-interpreter "
+fun makeCounter(x) {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    print i;
+  }
+
+  return count;
+}
+
+var counter = makeCounter();
+counter();
+counter();"))
+
+(comment
+  (test-interpreter "
+fun makeCounter(start) {
+    var i = start;
+    fun count() {
+        i = i + 1;
+        return i;
+    }
+    return count;
+}
+
+var counter = makeCounter(5);
+print counter();
+print counter();"))
+
+(comment
+  (test-interpreter "
+var x = 1;
+fun test () {print x;
+             }
+test ();
+x = 2;
+test ();"))
