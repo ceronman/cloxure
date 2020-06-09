@@ -47,6 +47,9 @@
 (defn fun-stmt [name params body]
   {:type :fun-stmt :name name :params params :body body})
 
+(defn class-stmt [name-token methods]
+  {:type :class-stmt :name-token name-token :methods methods})
+
 
 
 (defmulti pretty-print
@@ -107,8 +110,13 @@
 (defmethod pretty-print :fun-stmt [{name :name params :params body :body}]
   (format "(fun %s [%s] %s)"
           (:text name)
-          (str/join ", " (map pretty-print params))
+          (str/join ", " (map :text params))
           (str/join " " (map pretty-print body))))
+
+(defmethod pretty-print :class-stmt[{name :name-token methods :methods}]
+  (format "(class %s \n%s)"
+          (:text name)
+          (str/join "\n" (map pretty-print methods))))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

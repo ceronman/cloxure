@@ -6,9 +6,11 @@
 ;; -----------------------------------------------------------------
 ;; 
 ;;    program        → declaration* EOF ;
-;;    declaration    → funDecl
+;;    declaration    → classDecl
+;;                     | funDecl
 ;;                     | varDecl
 ;;                     | statement ;
+;;    classDecl      → "class" IDENTIFIER "{" function* "}" ;
 ;;    funDecl        → "fun" function ;
 ;;    function       → IDENTIFIER "(" parameters? ")" block ;
 ;;    parameters     → IDENTIFIER ("," IDENTIFIER) * ;
@@ -264,8 +266,21 @@
         body (:statements (:expr after-block))]
     (add-expr after-block (ast/fun-stmt name params body))))
 
+(defn- class-declaration [after-class]
+  (let [after-name (consume after-class :identifier "Expect class name.")
+        name (current-token after-class)
+        after-lbrace (consume after-name :lbrace "Expect '{' before class body.")]
+    (loop [parser after-lbrace
+           methods []]
+      (if (or (check? parser :rbrace) (is-at-end? parser))
+        (let [after-rbrace (consume parser :rbrace "Expect '}' after class body.")]
+          (add-expr after-rbrace (ast/class-stmt name methods)))
+        (let [after-method (function parser "method")]
+          (recur after-method (conj methods (:expr after-method))))))))
+
 (defn- declaration [parser]
   (cond 
+    (match? parser :class) (class-declaration (advance parser))
     (match? parser :fun) (function (advance parser) "function")
     (match? parser :var) (var-declaration (advance parser))
     :else (statement parser)))
@@ -404,10 +419,34 @@
                              241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256);"))
 
 (comment (test-parser "fun hello() { print 1; }"))
+(comment (test-parser "fun hello(one, two, three) { print 1; }"))
 (comment (test-parser "fun()"))
 (comment (test-parser "fun hello() {}"))
 (comment (test-parser "fun hello() { return; }"))
 (comment (test-parser "fun hello() { return 1; }"))
 
+(comment (test-parser "class"))
+(comment (test-parser "class Blah"))
+(comment (test-parser "class Blah {"))
+(comment (test-parser "class Emptry {}"))
+
+(comment (test-parser "
+class Breakfast {
+  cook() {
+    print 1;
+  }
+}
+"))
 
 
+(comment (test-parser "
+class Breakfast {
+  cook() {
+    print \"Eggs a-fryin'!\";
+  }
+
+  serve(who) {
+    print \"Enjoy your breakfast, \" + who + \".\";
+  }
+}
+"))
