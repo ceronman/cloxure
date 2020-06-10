@@ -1,12 +1,12 @@
 (ns cloxure.interpreter)
 
-(defn- lox-callable [name arity f]
+(defn- new-lox-function [name arity f]
   {:name name
    :arity arity
    :lox-fn f})
 
 (def time-builtin 
-  (lox-callable
+  (new-lox-function
    "time" 0
    (fn [state _]
      (assoc state :result (/ (System/currentTimeMillis) 1000.0)))))
@@ -70,7 +70,7 @@
     (instance? Boolean value) value
     :else true))
 
-(defn- lox-fn? [value]
+(defn- callable? [value]
   (and (map? value) (fn? (:lox-fn value))))
 
 (defn- require-num [value]
@@ -178,7 +178,7 @@
         state (evaluate-args state (:arguments call-expr))
         arguments (:result state)]
     (cond
-      (not (lox-fn? callee))
+      (not (callable? callee))
       (runtime-error "Can only call functions and classes.")
 
       (not= (:arity callee) (count arguments))
@@ -221,7 +221,7 @@
 
 (defn- lox-function [fun-stmt closure]
   (let [{:keys [name params body]} fun-stmt]
-    (lox-callable
+    (new-lox-function
      (:text name)
      (count params)
      (fn [state args]
@@ -239,6 +239,21 @@
 (defmethod evaluate :return-stmt [state return-stmt]
   (throw (ex-info "return" {:type :return
                             :state (evaluate state (:value return-stmt))})))
+
+(defn- new-instance [lox-class]
+  {:lox-class lox-class})
+
+(defn- new-lox-class [name]
+  {:name name
+   :arity 0
+   :lox-fn (fn [state] 
+             nil)})
+
+(defmethod evaluate :class-stmt [state class-stmt]
+  (let [name-token (:name-token class-stmt)
+        state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
+        lox-class (new-lox-class (:text name-token))]
+    (assign-variable state name-token class-stmt lox-class)))
 
 (defn interpret [statements locals]
   (loop [state (new-state locals)
@@ -490,3 +505,14 @@ fun test () {print x;
 test ();
 x = 2;
 test ();"))
+
+(comment
+  (test-interpreter "
+class DevonshireCream {
+  serveOn() {
+    return \"Scones\";
+  }
+}
+
+print DevonshireCream;"))
+
