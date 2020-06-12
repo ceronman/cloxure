@@ -3,7 +3,7 @@
 (defn- new-lox-function [name arity f]
   {:name name
    :arity arity
-   :lox-fn f})
+   :lox-callable f})
 
 (def time-builtin 
   (new-lox-function
@@ -71,7 +71,7 @@
     :else true))
 
 (defn- callable? [value]
-  (and (map? value) (fn? (:lox-fn value))))
+  (and (map? value) (fn? (:lox-callable value))))
 
 (defn- require-num [value]
   (if (instance? Double value)
@@ -186,7 +186,7 @@
                              (:arity callee)
                              (count arguments)))
 
-      :else ((:lox-fn callee) state arguments))))
+      :else ((:lox-callable callee) state arguments))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -244,10 +244,10 @@
   {:lox-class lox-class})
 
 (defn- new-lox-class [name]
-  {:name name
-   :arity 0
-   :lox-fn (fn [state] 
-             nil)})
+  (let [lox-class {:name name}]
+    {:arity 0
+     :lox-callable (fn [state _] 
+                     (assoc state :result (new-instance lox-class)))}))
 
 (defmethod evaluate :class-stmt [state class-stmt]
   (let [name-token (:name-token class-stmt)
@@ -515,4 +515,10 @@ class DevonshireCream {
 }
 
 print DevonshireCream;"))
+
+(comment
+  (test-interpreter "
+class Bagel {}
+var bagel = Bagel ();
+print bagel;"))
 
