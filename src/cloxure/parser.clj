@@ -41,7 +41,7 @@
 ;;    addition       → multiplication (("-" | "+") multiplication) * ;
 ;;    multiplication → unary (("/" | "*") unary) * ;
 ;;    unary          → ("!" | "-") unary | call ;
-;;    call           → primary ("(" arguments? ")") * ;
+;;    call           → primary ("(" arguments? ")" | "." IDENTIFIER) * ;
 ;;    primary        → NUMBER | STRING | "false" | "true" | "nil"
 ;;                     | "(" expression ")" 
 ;;                     | IDENTIFIER ;
@@ -129,8 +129,17 @@
 
 (defn- call [parser]
   (loop [parser (primary parser)]
-    (if (match? parser :lparen)
+    (cond 
+      (match? parser :lparen)
       (recur (finish-call (advance parser) (:expr parser)))
+      
+      (match? parser :dot)
+      (let [after-dot (advance parser)
+            after-identifier (consume after-dot :identifier 
+                                      "Expect property name after '.'.")]
+        (recur (add-expr after-identifier 
+                   (ast/get-expr (:expr after-identifier) (current-token after-dot)))))
+      :else
       parser)))
 
 (defn- unary [parser]
@@ -450,3 +459,6 @@ class Breakfast {
   }
 }
 "))
+
+(comment (test-parser "foo.bar;"))
+(comment (test-parser "egg.scramble(3).with(\"cheddar\");"))

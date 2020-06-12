@@ -8,6 +8,9 @@
 (defn call [callee paren arguments]
   {:type :call :callee callee :paren paren :arguments arguments})
 
+(defn get-expr [object name-token]
+  {:type :get-expr :object object :name-token name-token})
+
 (defn unary [operator right]
   {:type :unary :operator operator :right right})
 
@@ -106,6 +109,9 @@
   (format "(call %s [%s])"
           (pretty-print c)
           (str/join ", " (map pretty-print args))))
+
+(defmethod pretty-print :get-expr [{obj :object n :name-token}]
+  (format "(get %s %s)" (pretty-print obj) (:text n)))
 
 (defmethod pretty-print :fun-stmt [{name :name params :params body :body}]
   (format "(fun %s [%s] %s)"
