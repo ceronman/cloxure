@@ -70,7 +70,7 @@
     (instance? Boolean value) value
     :else true))
 
-(defn- callable? [value]
+(defn- lox-callable? [value]
   (and (map? value) (fn? (:lox-callable value))))
 
 (defn- require-num [value]
@@ -178,7 +178,7 @@
         state (evaluate-args state (:arguments call-expr))
         arguments (:result state)]
     (cond
-      (not (callable? callee))
+      (not (lox-callable? callee))
       (runtime-error "Can only call functions and classes.")
 
       (not= (:arity callee) (count arguments))
@@ -187,6 +187,48 @@
                              (count arguments)))
 
       :else ((:lox-callable callee) state arguments))))
+
+(defn- new-instance [lox-class]
+  {:lox-class lox-class
+   :fields (atom {})})
+
+(defn- lox-instance? [value]
+  (and (map? value) (contains? value :lox-class)))
+
+(defn- instance-get [object name-token]
+  (let [fields (:fields object)
+        name (:text name-token)]
+    (if (contains? @fields name)
+      (get @fields name)
+      (runtime-error (str "Undefined property '" name "'.")))))
+
+(defn- instance-set! [object name-token value]
+  (swap! (:fields object) assoc (:text name-token) value))
+
+(defn- new-lox-class [name]
+  (let [lox-class {:name name}]
+    {:arity 0
+     :lox-callable (fn [state _]
+                     (assoc state :result (new-instance lox-class)))}))
+
+(defmethod evaluate :get-expr [state get-expr]
+  (let [name-token (:name-token get-expr)
+        state (evaluate state (:object get-expr))
+        object (:result state)]
+    (if (lox-instance? object)
+      (assoc state :result (instance-get object name-token))
+      (runtime-error "Only instances have properties."))))
+
+(defmethod evaluate :set-expr [state set-expr]
+  (let [name-token (:name-token set-expr)
+        state (evaluate state (:object set-expr))
+        object (:result state)]
+    (if (lox-instance? object)
+      (let [state (evaluate state (:value set-expr))
+            value (:result state)]
+        (instance-set! object name-token value)
+        (assoc state :result value))
+      (runtime-error "Only instances have properties."))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -239,15 +281,6 @@
 (defmethod evaluate :return-stmt [state return-stmt]
   (throw (ex-info "return" {:type :return
                             :state (evaluate state (:value return-stmt))})))
-
-(defn- new-instance [lox-class]
-  {:lox-class lox-class})
-
-(defn- new-lox-class [name]
-  (let [lox-class {:name name}]
-    {:arity 0
-     :lox-callable (fn [state _] 
-                     (assoc state :result (new-instance lox-class)))}))
 
 (defmethod evaluate :class-stmt [state class-stmt]
   (let [name-token (:name-token class-stmt)
@@ -521,4 +554,26 @@ print DevonshireCream;"))
 class Bagel {}
 var bagel = Bagel ();
 print bagel;"))
+
+(comment
+  (test-interpreter "
+class Bagel {}
+var bagel = Bagel ();
+print bagel.flavor;"))
+
+(comment
+  (test-interpreter "
+class Bagel {}
+var bagel = Bagel ();
+bagel.flavor = 1;
+print bagel.flavor;"))
+
+(comment
+  (test-interpreter "
+class Bagel {}
+var bagel = Bagel ();
+bagel.flavor = 1;
+bagel.flavor = bagel.flavor + 2;
+print bagel.flavor;"))
+
 

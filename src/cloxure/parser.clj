@@ -32,8 +32,8 @@
 ;;    block          → "{" declaration* "}" ;
 ;;    varDecl        → "var" IDENTIFIER ("=" expression) ? ";" ;
 ;;    expression     → assignment ;
-;;    assignment     → identifier "=" assignment
-;;                     | logic_or ;
+;;    assignment     → (call ".") ? IDENTIFIER "=" assignment
+;;                     | logic_or;
 ;;    logic_or       → logic_and ("or" logic_and) * ;
 ;;    logic_and      → equality ("and" equality) * ;
 ;;    equality       → comparison (("!=" | "==") comparison) * ;
@@ -189,8 +189,13 @@
     (if (match? left :equal)
       (let [after-equals (advance left)
             after-value (assignment after-equals)]
-        (if (= (:type left-expr) :variable)
-          (add-expr after-value (ast/assign (:name-token left-expr) (:expr after-value)))
+        (case (:type left-expr) 
+          :variable (add-expr after-value (ast/assign (:name-token left-expr) 
+                                                      (:expr after-value)))
+          :get-expr (add-expr after-value (ast/set-expr (:object left-expr)
+                                                        (:name-token left-expr)
+                                                        (:expr after-value)))
+          
           (error after-equals "Invalid assignment target.")))
       left)))
 
@@ -362,6 +367,7 @@
         (if (seq errors)
           errors
           (doseq [s statements]
+            (prn s)
             (println (ast/pretty-print s))))))))
 
 (comment (test-parser "\""))
@@ -462,3 +468,5 @@ class Breakfast {
 
 (comment (test-parser "foo.bar;"))
 (comment (test-parser "egg.scramble(3).with(\"cheddar\");"))
+(comment (test-parser "someObject.someProperty = value;"))
+(comment (test-parser "egg.scramble(3).with(\"cheddar\").prop = true;"))

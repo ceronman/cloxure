@@ -11,6 +11,9 @@
 (defn get-expr [object name-token]
   {:type :get-expr :object object :name-token name-token})
 
+(defn set-expr [object name-token value]
+  {:type :set-expr :object object :name-token name-token :value value})
+
 (defn unary [operator right]
   {:type :unary :operator operator :right right})
 
@@ -112,6 +115,9 @@
 
 (defmethod pretty-print :get-expr [{obj :object n :name-token}]
   (format "(get %s %s)" (pretty-print obj) (:text n)))
+
+(defmethod pretty-print :set-expr [{obj :object n :name-token v :value}]
+  (format "(set %s %s %s)" (pretty-print obj) (:text n) (pretty-print v)))
 
 (defmethod pretty-print :fun-stmt [{name :name params :params body :body}]
   (format "(fun %s [%s] %s)"

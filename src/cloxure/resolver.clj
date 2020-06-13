@@ -93,7 +93,7 @@
       (cond-> (:else-branch node) (resolve-locals (:else-branch node)))))
 
 (defmethod resolve-locals :print-stmt [resolver node]
-  (-> resolver (resolve-locals (:expression node))))
+  (resolve-locals resolver (:expression node)))
 
 (defmethod resolve-locals :while-stmt [resolver node]
   (-> resolver
@@ -111,10 +111,10 @@
       (resolve-locals (:right node))))
 
 (defmethod resolve-locals :unary [resolver node]
-  (-> resolver (resolve-locals (:right node))))
+  (resolve-locals resolver (:right node)))
 
 (defmethod resolve-locals :group [resolver node]
-  (-> resolver (resolve-locals (:expression node))))
+  (resolve-locals resolver (:expression node)))
 
 (defmethod resolve-locals :literal [resolver _]
   resolver)
@@ -122,6 +122,14 @@
 (defmethod resolve-locals :call [resolver call-expr]
   (let [resolver (resolve-locals resolver (:callee call-expr))]
     (reduce resolve-locals resolver (:arguments call-expr))))
+
+(defmethod resolve-locals :get-expr [resolver get-expr]
+  (resolve-locals resolver (:object get-expr)))
+
+(defmethod resolve-locals :set-expr [resolver get-expr]
+  (-> resolver
+      (resolve-locals (:object get-expr))
+      (resolve-locals (:value get-expr))))
 
 (defmethod resolve-locals :return-stmt [resolver return-stmt]
   (if (nil? (:current-fn resolver))
