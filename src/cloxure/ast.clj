@@ -50,11 +50,15 @@
 (defn while-stmt [condition body]
   {:type :while-stmt :condition condition :body body})
 
+;; TODO: name -> name-token
 (defn fun-stmt [name params body]
   {:type :fun-stmt :name name :params params :body body})
 
 (defn class-stmt [name-token methods]
   {:type :class-stmt :name-token name-token :methods methods})
+
+(defn this-expr [keyword]
+  {:type :this-expr :keyword keyword})
 
 
 
@@ -129,6 +133,9 @@
   (format "(class %s \n%s)"
           (:text name)
           (str/join "\n" (map pretty-print methods))))
+
+(defmethod pretty-print :this-expr [_]
+  "*this*")
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")

@@ -1,15 +1,11 @@
 (ns cloxure.interpreter)
 
-(defn- new-lox-function [name arity f]
-  {:name name
-   :arity arity
-   :lox-callable f})
-
-(def time-builtin 
-  (new-lox-function
-   "time" 0
+(def time-builtin
+  {:name "time"
+   :arity 0
+   :lox-callable
    (fn [state _]
-     (assoc state :result (/ (System/currentTimeMillis) 1000.0)))))
+     (assoc state :result (/ (System/currentTimeMillis) 1000.0)))})
 
 (def builtins
   {"time" time-builtin})
@@ -29,36 +25,37 @@
     env
     (recur (:enclosing @env) (dec distance))))
 
-(defn- env-get [env name-token]
-  (let [name (:text name-token)]
-    (if (contains? @env name)
-      (get @env name)
-      (runtime-error (format "Undefined variable %s" name)))))
+(defn- env-get [env name]
+  (if (contains? @env name)
+    (get @env name)
+    (runtime-error (format "Undefined variable %s" name))))
 
-(defn- env-assign! [env name-token value]
-  (let [name (:text name-token)]
-    (if (contains? @env name)
-      (swap! env assoc name value)
-      (runtime-error (format "Undefined variable %s" name)))))
+(defn- env-declare! [env name value]
+  (swap! env assoc name value))
+
+(defn- env-assign! [env name value]
+  (if (contains? @env name)
+    (swap! env assoc name value)
+    (runtime-error (format "Undefined variable %s" name))))
 
 (defn- declare-variable [state name-token value]
   (let [env (:environment state)]
-    (swap! env assoc (:text name-token) value)
+    (env-declare! env (:text name-token) value)
     state))
 
 (defn- lookup-variable [state name-token expr]
   (let [distance (get-in state [:locals expr])
-        env (if (nil? distance) 
-              (:globals state) 
+        env (if (nil? distance)
+              (:globals state)
               (env-ancestor (:environment state) distance))]
-    (assoc state :result (env-get env name-token))))
+    (assoc state :result (env-get env (:text name-token)))))
 
 (defn- assign-variable [state name-token expr value]
   (let [distance (get-in state [:locals expr])
         env (if (nil? distance)
               (:globals state)
               (env-ancestor (:environment state) distance))]
-    (env-assign! env name-token value)
+    (env-assign! env (:text name-token) value)
     state))
 
 (defn- new-scope [parent-env]
@@ -137,8 +134,8 @@
 
 (defmethod evaluate :var-stmt [state var-stmt]
   (let [initializer (:initializer var-stmt)
-        state (if initializer 
-                (evaluate state initializer) 
+        state (if initializer
+                (evaluate state initializer)
                 (assoc state :result nil))]
     (-> state
         (declare-variable (:name-token var-stmt) (:result state))
@@ -158,13 +155,13 @@
 (defmethod evaluate :block [state block-stmt]
   (let [env (:environment state)]
     (-> state
-      (assoc :environment (new-scope env))
-      (evaluate-statements (:statements block-stmt))
-      (assoc :environment env)
-      (assoc :result nil))))
+        (assoc :environment (new-scope env))
+        (evaluate-statements (:statements block-stmt))
+        (assoc :environment env)
+        (assoc :result nil))))
 
 (defn- evaluate-args [state args]
-  (reduce 
+  (reduce
    (fn [state arg]
      (let [all-results (:result state)
            state (evaluate state arg)]
@@ -188,6 +185,44 @@
 
       :else ((:lox-callable callee) state arguments))))
 
+(defn- declare-fn-args [state params args]
+  (reduce (fn [state i]
+            (declare-variable state (nth params i) (nth args i)))
+          state
+          (range (count params))))
+
+(defn- execute-fn-body [state statements]
+  (try
+    (-> state
+        (evaluate-statements statements)
+        (assoc :result nil))
+    (catch clojure.lang.ExceptionInfo e
+      (let [{type :type state :state} (ex-data e)]
+        (if (= type :return)
+          state
+          (throw e))))))
+
+;; TODO: Implement callables with protocols!
+(defn- new-lox-function [fun-stmt closure]
+  (let [{:keys [name params body]} fun-stmt]
+    {:declaration fun-stmt
+     :name (:text name)
+     :arity (count params)
+     :closure closure
+     :lox-callable
+     (fn [state args]
+       (let [env (:environment state)]
+         (-> state
+             (assoc :environment (new-scope closure))
+             (declare-fn-args params args)
+             (execute-fn-body body)
+             (assoc :environment env))))}))
+
+(defn- lox-function-bind [lox-function instance]
+  (let [env (new-scope (:closure lox-function))]
+    (env-declare! env "this" instance)
+    (new-lox-function (:declaration lox-function) env)))
+
 (defn- new-instance [lox-class]
   {:lox-class lox-class
    :fields (atom {})})
@@ -199,14 +234,16 @@
   (let [fields (:fields object)
         methods (:methods (:lox-class object))
         name (:text name-token)]
-    (prn methods)
     (cond
-      (contains? methods name) (get methods name)
+      (contains? methods name) (lox-function-bind (get methods name) object)
       (contains? @fields name) (get @fields name)
       :else (runtime-error (str "Undefined property '" name "'.")))))
 
 (defn- instance-set! [object name-token value]
   (swap! (:fields object) assoc (:text name-token) value))
+
+(defmethod evaluate :this-expr [state this-expr]
+  (lookup-variable state (:keyword this-expr) this-expr))
 
 (defmethod evaluate :get-expr [state get-expr]
   (let [name-token (:name-token get-expr)
@@ -241,38 +278,8 @@
       (recur (evaluate state (:body while-stmt)) while-stmt)
       (assoc state :result nil))))
 
-(defn- declare-fn-args [state params args]
-  (reduce (fn [state i]
-            (declare-variable state (nth params i) (nth args i)))
-          state
-          (range (count params))))
-
-(defn- execute-fn-body [state statements]
-  (try
-    (-> state
-        (evaluate-statements statements)
-        (assoc :result nil))
-    (catch clojure.lang.ExceptionInfo e
-      (let [{type :type state :state} (ex-data e)]
-        (if (= type :return) 
-          state 
-          (throw e))))))
-
-(defn- lox-function [fun-stmt closure]
-  (let [{:keys [name params body]} fun-stmt]
-    (new-lox-function
-     (:text name)
-     (count params)
-     (fn [state args]
-       (let [env (:environment state)]
-         (-> state
-             (assoc :environment (new-scope closure))
-             (declare-fn-args params args)
-             (execute-fn-body body)
-             (assoc :environment env)))))))
-
 (defmethod evaluate :fun-stmt [state fun-stmt]
-  (let [f (lox-function fun-stmt (:environment state))]
+  (let [f (new-lox-function fun-stmt (:environment state))]
     (declare-variable state (:name fun-stmt) f)))
 
 (defmethod evaluate :return-stmt [state return-stmt]
@@ -291,7 +298,7 @@
   (let [name-token (:name-token class-stmt)
         state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
         env (:environment state)
-        methods (map #(lox-function %1 env) (:methods class-stmt))
+        methods (map #(new-lox-function %1 env) (:methods class-stmt))
         methods (into {} (map (juxt :name identity) methods))
         lox-class (new-lox-class (:text name-token) methods)]
     (assign-variable state name-token class-stmt lox-class)))
@@ -302,7 +309,7 @@
     (if (empty? statements)
       (:result state)
       ;; TODO: replace with reduce?
-      (let [state (try 
+      (let [state (try
                     (evaluate state (first statements))
                     (catch clojure.lang.ExceptionInfo e
                       (println "ERROR" (ex-message e) (prn-str (ex-data e)))
@@ -509,7 +516,7 @@
 
 (comment
   (test-interpreter "
-fun makeCounter(x) {
+fun makeCounter() {
   var i = 0;
   fun count() {
     i = i + 1;
@@ -541,8 +548,9 @@ print counter();"))
 (comment
   (test-interpreter "
 var x = 1;
-fun test () {print x;
-             }
+fun test () {
+    print x;
+}
 test ();
 x = 2;
 test ();"))
@@ -594,4 +602,14 @@ class Bacon {
 
 Bacon().eat();"))
 
-
+(comment
+  (test-interpreter "
+class Person {
+  sayName() {
+    print this.name;
+  }
+}
+var person = Person();
+person.name = \"Manuel\";
+person.sayName();
+"))

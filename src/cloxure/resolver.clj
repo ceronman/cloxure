@@ -83,10 +83,17 @@
       (add-var (:name node) true)
       (resolve-function node :function)))
 
+(defn- resolve-methods [resolver methods]
+  (reduce #(resolve-function %1 %2 :method) resolver methods))
+
 (defmethod resolve-locals :class-stmt [resolver node]
-  (as-> resolver resolver
-    (add-var resolver (:name node) true)
-    (reduce #(resolve-function %1 %2 :method) resolver (:methods node))))
+  (-> resolver
+    (add-var (:name node) true)
+    (with-scope
+      (fn [resolver]
+        (-> resolver
+            (add-var {:text "this"} true) ;; TODO: hacky!
+            (resolve-methods (:methods node)))))))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
@@ -132,6 +139,9 @@
   (-> resolver
       (resolve-locals (:object get-expr))
       (resolve-locals (:value get-expr))))
+
+(defmethod resolve-locals :this-expr [resolver this-expr]
+  (resolve-local resolver this-expr (:keyword this-expr)))
 
 (defmethod resolve-locals :return-stmt [resolver return-stmt]
   (if (nil? (:current-fn resolver))

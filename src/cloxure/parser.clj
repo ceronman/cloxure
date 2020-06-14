@@ -106,6 +106,9 @@
     (match? parser :true) (add-literal parser true)
     (match? parser :nil) (add-literal parser nil)
     (match? parser :number :string) (add-literal parser (:literal (current-token parser)))
+    (match? parser :this) (add-expr (advance parser) (ast/this-expr (current-token parser)))
+    
+    ;; TODO: Weird advance pos
     (match? parser :identifier) (advance (add-expr parser (ast/variable (current-token parser))))
     (match? parser :lparen) (let [middle (expression (advance parser))]
                               (add-expr (consume middle :rparen "Expect ')' after expression.") 
@@ -470,3 +473,4 @@ class Breakfast {
 (comment (test-parser "egg.scramble(3).with(\"cheddar\");"))
 (comment (test-parser "someObject.someProperty = value;"))
 (comment (test-parser "egg.scramble(3).with(\"cheddar\").prop = true;"))
+(comment (test-parser "this.something();"))
