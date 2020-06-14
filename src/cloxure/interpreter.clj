@@ -197,19 +197,16 @@
 
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
+        methods (:methods (:lox-class object))
         name (:text name-token)]
-    (if (contains? @fields name)
-      (get @fields name)
-      (runtime-error (str "Undefined property '" name "'.")))))
+    (prn methods)
+    (cond
+      (contains? methods name) (get methods name)
+      (contains? @fields name) (get @fields name)
+      :else (runtime-error (str "Undefined property '" name "'.")))))
 
 (defn- instance-set! [object name-token value]
   (swap! (:fields object) assoc (:text name-token) value))
-
-(defn- new-lox-class [name]
-  (let [lox-class {:name name}]
-    {:arity 0
-     :lox-callable (fn [state _]
-                     (assoc state :result (new-instance lox-class)))}))
 
 (defmethod evaluate :get-expr [state get-expr]
   (let [name-token (:name-token get-expr)
@@ -282,10 +279,21 @@
   (throw (ex-info "return" {:type :return
                             :state (evaluate state (:value return-stmt))})))
 
+(defn- new-lox-class [name methods]
+  (let [lox-class {:name name
+                   :methods methods}]
+    (merge lox-class
+           {:arity 0
+            :lox-callable (fn [state _]
+                            (assoc state :result (new-instance lox-class)))})))
+
 (defmethod evaluate :class-stmt [state class-stmt]
   (let [name-token (:name-token class-stmt)
         state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
-        lox-class (new-lox-class (:text name-token))]
+        env (:environment state)
+        methods (map #(lox-function %1 env) (:methods class-stmt))
+        methods (into {} (map (juxt :name identity) methods))
+        lox-class (new-lox-class (:text name-token) methods)]
     (assign-variable state name-token class-stmt lox-class)))
 
 (defn interpret [statements locals]
@@ -575,5 +583,15 @@ var bagel = Bagel ();
 bagel.flavor = 1;
 bagel.flavor = bagel.flavor + 2;
 print bagel.flavor;"))
+
+(comment
+  (test-interpreter "
+class Bacon {
+  eat() {
+    print \"Crunch crunch crunch!\";
+  }
+}
+
+Bacon().eat();"))
 
 

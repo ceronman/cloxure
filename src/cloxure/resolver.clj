@@ -84,7 +84,9 @@
       (resolve-function node :function)))
 
 (defmethod resolve-locals :class-stmt [resolver node]
-  (add-var resolver (:name node) true))
+  (as-> resolver resolver
+    (add-var resolver (:name node) true)
+    (reduce #(resolve-function %1 %2 :method) resolver (:methods node))))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
