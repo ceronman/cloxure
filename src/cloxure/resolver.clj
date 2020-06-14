@@ -4,7 +4,8 @@
   {:scopes '()
    :locals {}
    :errors []
-   :current-fn nil})
+   :current-fn nil
+   :current-class nil})
 
 (defn- error [resolver token message]
   (let [e {:line (:line token) :message message :loc (:text token)}]
@@ -69,14 +70,14 @@
       (resolve-local node (:name-token node))))
 
 (defn- resolve-function [resolver fun-stmt fn-type]
-  (let [current-fn (:current-fn resolver)]
+  (let [prev-fn (:current-fn resolver)]
     (with-scope resolver 
       (fn [resolver]
         (-> resolver
             (assoc :current-fn fn-type)
             (add-vars (:params fun-stmt) true)
             (resolve-statements (:body fun-stmt))
-            (assoc :current-fn current-fn))))))
+            (assoc :current-fn prev-fn))))))
 
 (defmethod resolve-locals :fun-stmt [resolver node]
   (-> resolver
@@ -87,13 +88,16 @@
   (reduce #(resolve-function %1 %2 :method) resolver methods))
 
 (defmethod resolve-locals :class-stmt [resolver node]
-  (-> resolver
-    (add-var (:name node) true)
-    (with-scope
-      (fn [resolver]
-        (-> resolver
-            (add-var {:text "this"} true) ;; TODO: hacky!
-            (resolve-methods (:methods node)))))))
+  (let [prev-class (:current-class resolver)]
+    (-> resolver
+        (add-var (:name node) true)
+        (with-scope
+          (fn [resolver]
+            (-> resolver
+                (assoc :current-class :class)
+                (add-var {:text "this"} true) ;; TODO: hacky!
+                (resolve-methods (:methods node))
+                (assoc :current-class prev-class)))))))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
@@ -141,7 +145,11 @@
       (resolve-locals (:value get-expr))))
 
 (defmethod resolve-locals :this-expr [resolver this-expr]
-  (resolve-local resolver this-expr (:keyword this-expr)))
+  (if (nil? (:current-class resolver))
+    (error resolver
+           (:keyword this-expr)
+           "Cannot use 'this' outside of a class.")
+    (resolve-local resolver this-expr (:keyword this-expr))))
 
 (defmethod resolve-locals :return-stmt [resolver return-stmt]
   (if (nil? (:current-fn resolver))

@@ -613,3 +613,10 @@ var person = Person();
 person.name = \"Manuel\";
 person.sayName();
 "))
+
+(comment
+  (test-interpreter "
+fun test() {
+    return this.something;
+}
+"))
