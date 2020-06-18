@@ -1,11 +1,18 @@
 (ns cloxure.interpreter)
 
+; TODO: this is for debugging purposes, remove later.
+(set! *print-level* 5)
+
+(defprotocol LoxCallable
+  "Represent a callable object in Lox"
+  (arity [this])
+  (call [this state arguments]))
+
 (def time-builtin
-  {:name "time"
-   :arity 0
-   :lox-callable
-   (fn [state _]
-     (assoc state :result (/ (System/currentTimeMillis) 1000.0)))})
+  (reify LoxCallable
+    (call [this state _]
+      (assoc state :result (/ (System/currentTimeMillis) 1000.0)))
+    (arity [this] 0)))
 
 (def builtins
   {"time" time-builtin})
@@ -66,9 +73,6 @@
     (nil? value) false
     (instance? Boolean value) value
     :else true))
-
-(defn- lox-callable? [value]
-  (and (map? value) (fn? (:lox-callable value))))
 
 (defn- require-num [value]
   (if (instance? Double value)
@@ -175,15 +179,15 @@
         state (evaluate-args state (:arguments call-expr))
         arguments (:result state)]
     (cond
-      (not (lox-callable? callee))
+      (not (satisfies? LoxCallable callee))
       (runtime-error "Can only call functions and classes.")
 
-      (not= (:arity callee) (count arguments))
+      (not= (arity callee) (count arguments))
       (runtime-error (format "Expected %d arguments but got %d"
                              (:arity callee)
                              (count arguments)))
 
-      :else ((:lox-callable callee) state arguments))))
+      :else (call callee state arguments))))
 
 (defn- declare-fn-args [state params args]
   (reduce (fn [state i]
@@ -202,40 +206,35 @@
           state
           (throw e))))))
 
-;; TODO: Implement callables with protocols!
-(defn- new-lox-function [fun-stmt closure]
-  (let [{:keys [name params body]} fun-stmt]
-    {:declaration fun-stmt
-     :name (:text name)
-     :arity (count params)
-     :closure closure
-     :lox-callable
-     (fn [state args]
-       (let [env (:environment state)]
-         (-> state
-             (assoc :environment (new-scope closure))
-             (declare-fn-args params args)
-             (execute-fn-body body)
-             (assoc :environment env))))}))
+(defrecord LoxFunction [declaration closure]
+  LoxCallable
+  (arity [this] (-> this :declaration :params count))
+  (call [this state args]
+        (let [env (:environment state)
+              closure (:closure this)]
+          (-> state
+              (assoc :environment (new-scope closure))
+              (declare-fn-args (:params declaration) args)
+              (execute-fn-body (:body declaration))
+              (assoc :environment env)))))
 
-(defn- lox-function-bind [lox-function instance]
-  (let [env (new-scope (:closure lox-function))]
+(defn lox-fn-bind [lox-fn instance]
+  (let [env (new-scope (:closure lox-fn))]
     (env-declare! env "this" instance)
-    (new-lox-function (:declaration lox-function) env)))
+    (->LoxFunction (:declaration lox-fn) env)))
+
+(defrecord LoxInstance [lox-class fields])
 
 (defn- new-instance [lox-class]
-  {:lox-class lox-class
-   :fields (atom {})})
+  (->LoxInstance lox-class (atom {})))
 
-(defn- lox-instance? [value]
-  (and (map? value) (contains? value :lox-class)))
 
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
         methods (:methods (:lox-class object))
         name (:text name-token)]
     (cond
-      (contains? methods name) (lox-function-bind (get methods name) object)
+      (contains? methods name) (lox-fn-bind (get methods name) object)
       (contains? @fields name) (get @fields name)
       :else (runtime-error (str "Undefined property '" name "'.")))))
 
@@ -249,7 +248,7 @@
   (let [name-token (:name-token get-expr)
         state (evaluate state (:object get-expr))
         object (:result state)]
-    (if (lox-instance? object)
+    (if (instance? LoxInstance object)
       (assoc state :result (instance-get object name-token))
       (runtime-error "Only instances have properties."))))
 
@@ -257,7 +256,7 @@
   (let [name-token (:name-token set-expr)
         state (evaluate state (:object set-expr))
         object (:result state)]
-    (if (lox-instance? object)
+    (if (instance? LoxInstance object)
       (let [state (evaluate state (:value set-expr))
             value (:result state)]
         (instance-set! object name-token value)
@@ -279,28 +278,29 @@
       (assoc state :result nil))))
 
 (defmethod evaluate :fun-stmt [state fun-stmt]
-  (let [f (new-lox-function fun-stmt (:environment state))]
+  (let [f (->LoxFunction fun-stmt (:environment state))]
     (declare-variable state (:name fun-stmt) f)))
 
 (defmethod evaluate :return-stmt [state return-stmt]
   (throw (ex-info "return" {:type :return
                             :state (evaluate state (:value return-stmt))})))
 
-(defn- new-lox-class [name methods]
-  (let [lox-class {:name name
-                   :methods methods}]
-    (merge lox-class
-           {:arity 0
-            :lox-callable (fn [state _]
-                            (assoc state :result (new-instance lox-class)))})))
+(defrecord LoxClass [name methods]
+  LoxCallable
+  (arity [this] 0)
+  (call [this state args]
+        (assoc state :result (new-instance this))))
 
 (defmethod evaluate :class-stmt [state class-stmt]
   (let [name-token (:name-token class-stmt)
         state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
         env (:environment state)
-        methods (map #(new-lox-function %1 env) (:methods class-stmt))
-        methods (into {} (map (juxt :name identity) methods))
-        lox-class (new-lox-class (:text name-token) methods)]
+        methods (->> (:methods class-stmt)
+                     (map (fn [fun-stmt]
+                            [(:text (:name fun-stmt))
+                             (->LoxFunction fun-stmt env)]))
+                     (into {}))
+        lox-class (->LoxClass (:text name-token) methods)]
     (assign-variable state name-token class-stmt lox-class)))
 
 (defn interpret [statements locals]
