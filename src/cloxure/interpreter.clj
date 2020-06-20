@@ -195,33 +195,35 @@
           state
           (range (count params))))
 
-(defn- execute-fn-body [state statements]
+(defn- execute-fn-body [state statements closure initializer?]
   (try
     (-> state
         (evaluate-statements statements)
-        (assoc :result nil))
+        (assoc :result (if initializer? (env-get closure "this") nil)))
+    ; TODO: Investigate custom exceptions
     (catch clojure.lang.ExceptionInfo e
       (let [{type :type state :state} (ex-data e)]
         (if (= type :return)
-          state
+          (if initializer? (assoc state :result (env-get closure "this")) state)
           (throw e))))))
 
-(defrecord LoxFunction [declaration closure]
+(defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
   (arity [this] (-> this :declaration :params count))
   (call [this state args]
-        (let [env (:environment state)
+        (let [declaration (:declaration this)
+              env (:environment state)
               closure (:closure this)]
           (-> state
               (assoc :environment (new-scope closure))
               (declare-fn-args (:params declaration) args)
-              (execute-fn-body (:body declaration))
+              (execute-fn-body (:body declaration) closure (:initializer? this))
               (assoc :environment env)))))
 
 (defn lox-fn-bind [lox-fn instance]
   (let [env (new-scope (:closure lox-fn))]
     (env-declare! env "this" instance)
-    (->LoxFunction (:declaration lox-fn) env)))
+    (->LoxFunction (:declaration lox-fn) env (:initializer? lox-fn))))
 
 (defrecord LoxInstance [lox-class fields])
 
@@ -278,18 +280,28 @@
       (assoc state :result nil))))
 
 (defmethod evaluate :fun-stmt [state fun-stmt]
-  (let [f (->LoxFunction fun-stmt (:environment state))]
+  (let [f (->LoxFunction fun-stmt (:environment state) false)]
     (declare-variable state (:name fun-stmt) f)))
 
 (defmethod evaluate :return-stmt [state return-stmt]
-  (throw (ex-info "return" {:type :return
-                            :state (evaluate state (:value return-stmt))})))
+  (let [value (:value return-stmt)
+        state (if value (evaluate state value) (assoc state :result nil))]
+    (throw (ex-info "return" {:type :return
+                              :state state}))))
 
 (defrecord LoxClass [name methods]
   LoxCallable
-  (arity [this] 0)
+  (arity [this]
+         (if-let [initializer (get (:methods this) "init")]
+           (arity initializer)
+           0))
   (call [this state args]
-        (assoc state :result (new-instance this))))
+        (let [instance (new-instance this)
+              initializer (get (:methods this) "init")
+              state (if initializer
+                      (call (lox-fn-bind initializer instance) state args)
+                      state)]
+          (assoc state :result instance))))
 
 (defmethod evaluate :class-stmt [state class-stmt]
   (let [name-token (:name-token class-stmt)
@@ -297,8 +309,8 @@
         env (:environment state)
         methods (->> (:methods class-stmt)
                      (map (fn [fun-stmt]
-                            [(:text (:name fun-stmt))
-                             (->LoxFunction fun-stmt env)]))
+                            (let [name (:text (:name fun-stmt))]
+                              [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
         lox-class (->LoxClass (:text name-token) methods)]
     (assign-variable state name-token class-stmt lox-class)))
@@ -620,3 +632,47 @@ fun test() {
     return this.something;
 }
 "))
+
+(comment
+  (test-interpreter "
+class Person {
+  init() {
+    this.name = \"manuel\";
+  }
+}
+var person = Person();
+print person.name;
+"))
+
+(comment
+  (test-interpreter "
+class Foo {
+  init() {
+    return;
+  }
+}
+"))
+
+(comment
+  (test-interpreter "
+class Foo {
+  init() {
+    return 1;
+  }
+}
+"))
+
+(comment
+  (test-interpreter "
+class Foo {
+  init() {
+    print this;
+  }
+}
+
+var foo = Foo();
+print foo.init();
+"))
+
+
+

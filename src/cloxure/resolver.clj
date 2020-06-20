@@ -85,7 +85,13 @@
       (resolve-function node :function)))
 
 (defn- resolve-methods [resolver methods]
-  (reduce #(resolve-function %1 %2 :method) resolver methods))
+  (reduce
+   (fn [resolver method]
+     (if (= (-> method :name :text) "init")
+       (resolve-function resolver method :initializer)
+       (resolve-function resolver method :method)))
+   resolver
+   methods))
 
 (defmethod resolve-locals :class-stmt [resolver node]
   (let [prev-class (:current-class resolver)]
@@ -156,7 +162,13 @@
     (error resolver
            (:keyword return-stmt)
            "Cannot return from top-level code.")
-    (resolve-locals resolver (:value return-stmt))))
+    (if (:value return-stmt)
+      (if (= (:current-fn resolver) :initializer)
+        (error resolver
+               (:keyword return-stmt)
+               "Cannot return a value from an initializer.")
+        (resolve-locals resolver (:value return-stmt)))
+      resolver)))
 
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])

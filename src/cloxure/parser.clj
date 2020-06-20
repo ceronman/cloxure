@@ -214,7 +214,7 @@
   (let [keyword (current-token parser)
         after-keyword (advance parser)
         after-value (if (match? after-keyword :semicolon)
-                      (assoc after-keyword :expr (ast/literal nil))
+                      (assoc after-keyword :expr nil)
                       (expression after-keyword))
         after-semicolon (consume after-value :semicolon "Expect ';' after return value.")]
     (add-expr after-semicolon (ast/return-stmt keyword (:expr after-value)))))
