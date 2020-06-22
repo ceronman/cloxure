@@ -289,7 +289,7 @@
     (throw (ex-info "return" {:type :return
                               :state state}))))
 
-(defrecord LoxClass [name methods]
+(defrecord LoxClass [name superclass methods]
   LoxCallable
   (arity [this]
          (if-let [initializer (get (:methods this) "init")]
@@ -303,8 +303,19 @@
                       state)]
           (assoc state :result instance))))
 
+(defn- evaluate-superclass [state class-stmt]
+  (if-let [superclass (:superclass class-stmt)]
+    (let [state (evaluate state superclass)
+          value (:result state)]
+      (if (instance? LoxClass value)
+        state
+        (runtime-error "Superclass must be a class.")))
+    (assoc state :result nil)))
+
 (defmethod evaluate :class-stmt [state class-stmt]
-  (let [name-token (:name-token class-stmt)
+  (let [state (evaluate-superclass state class-stmt)
+        superclass (:result state)
+        name-token (:name-token class-stmt)
         state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
         env (:environment state)
         methods (->> (:methods class-stmt)
@@ -312,7 +323,7 @@
                             (let [name (:text (:name fun-stmt))]
                               [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
-        lox-class (->LoxClass (:text name-token) methods)]
+        lox-class (->LoxClass (:text name-token) superclass methods)]
     (assign-variable state name-token class-stmt lox-class)))
 
 (defn interpret [statements locals]
@@ -673,6 +684,19 @@ class Foo {
 var foo = Foo();
 print foo.init();
 "))
+
+(comment
+  (test-interpreter "class Oops < Oops {}"))
+
+(comment
+  (test-interpreter "class Oops < NotExists {}"))
+
+(comment
+  (test-interpreter "
+var NotAClass = \"I am totally not a class\";
+class Subclass < NotAClass {} // ?!
+"))
+
 
 
 

@@ -10,7 +10,8 @@
 ;;                     | funDecl
 ;;                     | varDecl
 ;;                     | statement ;
-;;    classDecl      → "class" IDENTIFIER "{" function* "}" ;
+;;    classDecl      → "class" IDENTIFIER ("<" IDENTIFIER) ?
+;;                     "{" function* "}" ;
 ;;    funDecl        → "fun" function ;
 ;;    function       → IDENTIFIER "(" parameters? ")" block ;
 ;;    parameters     → IDENTIFIER ("," IDENTIFIER) * ;
@@ -286,12 +287,17 @@
 (defn- class-declaration [after-class]
   (let [after-name (consume after-class :identifier "Expect class name.")
         name (current-token after-class)
-        after-lbrace (consume after-name :lbrace "Expect '{' before class body.")]
+        extends? (match? after-name :less)
+        after-super (if extends?
+                      (consume (advance after-name) :identifier "Expect superclass name.")
+                      after-name)
+        superclass (when extends? (ast/variable (current-token (advance after-name))))
+        after-lbrace (consume after-super :lbrace "Expect '{' before class body.")]
     (loop [parser after-lbrace
            methods []]
       (if (or (check? parser :rbrace) (is-at-end? parser))
         (let [after-rbrace (consume parser :rbrace "Expect '}' after class body.")]
-          (add-expr after-rbrace (ast/class-stmt name methods)))
+          (add-expr after-rbrace (ast/class-stmt name superclass methods)))
         (let [after-method (function parser "method")]
           (recur after-method (conj methods (:expr after-method))))))))
 
@@ -474,3 +480,5 @@ class Breakfast {
 (comment (test-parser "someObject.someProperty = value;"))
 (comment (test-parser "egg.scramble(3).with(\"cheddar\").prop = true;"))
 (comment (test-parser "this.something();"))
+
+(comment (test-parser "class Bar < Foo {}"))

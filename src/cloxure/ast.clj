@@ -54,8 +54,8 @@
 (defn fun-stmt [name params body]
   {:type :fun-stmt :name name :params params :body body})
 
-(defn class-stmt [name-token methods]
-  {:type :class-stmt :name-token name-token :methods methods})
+(defn class-stmt [name-token superclass methods]
+  {:type :class-stmt :name-token name-token :superclass superclass :methods methods})
 
 (defn this-expr [keyword]
   {:type :this-expr :keyword keyword})

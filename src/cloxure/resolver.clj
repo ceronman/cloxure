@@ -93,10 +93,22 @@
    resolver
    methods))
 
+(defn- resolve-superclass [resolver class-stmt]
+  (let [name (:text (:name-token class-stmt))
+        superclass (:superclass class-stmt)]
+    (if superclass
+      (if (= name (:text (:name-token superclass)))
+        (error resolver 
+               (:name-token superclass) 
+               "A class cannot inherit from itself.")
+        (resolve-locals resolver superclass))
+      resolver)))
+
 (defmethod resolve-locals :class-stmt [resolver node]
   (let [prev-class (:current-class resolver)]
     (-> resolver
         (add-var (:name node) true)
+        (resolve-superclass node)
         (with-scope
           (fn [resolver]
             (-> resolver
