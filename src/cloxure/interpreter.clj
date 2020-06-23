@@ -225,6 +225,28 @@
     (env-declare! env "this" instance)
     (->LoxFunction (:declaration lox-fn) env (:initializer? lox-fn))))
 
+(defrecord LoxClass [name superclass methods]
+  LoxCallable
+  (arity [this]
+    (if-let [initializer (find-method this "init")]
+      (arity initializer)
+      0))
+  (call [this state args]
+    (let [instance (new-instance this)
+          initializer (find-method this "init")
+          state (if initializer
+                  (call (lox-fn-bind initializer instance) state args)
+                  state)]
+      (assoc state :result instance))))
+
+(defn find-method [lox-class name]
+  (let [{:keys [methods superclass]} lox-class]
+    (if-let [method (get methods name)]
+      method
+      (if superclass 
+        (recur superclass name)
+        nil))))
+
 (defrecord LoxInstance [lox-class fields])
 
 (defn- new-instance [lox-class]
@@ -233,10 +255,10 @@
 
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
-        methods (:methods (:lox-class object))
-        name (:text name-token)]
+        name (:text name-token)
+        method (find-method (:lox-class object) name)]
     (cond
-      (contains? methods name) (lox-fn-bind (get methods name) object)
+      method (lox-fn-bind method object)
       (contains? @fields name) (get @fields name)
       :else (runtime-error (str "Undefined property '" name "'.")))))
 
@@ -288,20 +310,6 @@
         state (if value (evaluate state value) (assoc state :result nil))]
     (throw (ex-info "return" {:type :return
                               :state state}))))
-
-(defrecord LoxClass [name superclass methods]
-  LoxCallable
-  (arity [this]
-         (if-let [initializer (get (:methods this) "init")]
-           (arity initializer)
-           0))
-  (call [this state args]
-        (let [instance (new-instance this)
-              initializer (get (:methods this) "init")
-              state (if initializer
-                      (call (lox-fn-bind initializer instance) state args)
-                      state)]
-          (assoc state :result instance))))
 
 (defn- evaluate-superclass [state class-stmt]
   (if-let [superclass (:superclass class-stmt)]
@@ -695,6 +703,14 @@ print foo.init();
   (test-interpreter "
 var NotAClass = \"I am totally not a class\";
 class Subclass < NotAClass {} // ?!
+"))
+
+(comment
+  (test-interpreter "
+class A { one() { print 1; } }
+class B < A {}
+var b = B();
+b.one();
 "))
 
 
