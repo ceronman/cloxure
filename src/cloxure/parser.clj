@@ -43,9 +43,9 @@
 ;;    multiplication → unary (("/" | "*") unary) * ;
 ;;    unary          → ("!" | "-") unary | call ;
 ;;    call           → primary ("(" arguments? ")" | "." IDENTIFIER) * ;
-;;    primary        → NUMBER | STRING | "false" | "true" | "nil"
-;;                     | "(" expression ")" 
-;;                     | IDENTIFIER ;
+;;    primary        → "true" | "false" | "nil" | "this"
+;;                     | NUMBER | STRING | IDENTIFIER | "(" expression ")"
+;;                     | "super" "." IDENTIFIER ;
 ;;                
 ;;------------------------------------------------------------------
 
@@ -101,12 +101,20 @@
 
 (declare expression)
 
+(defn- add-super [parser]
+  (let [after-dot (consume (advance parser) :dot
+                           "Expect '.' after 'super'.")
+        after-idt (consume after-dot :identifier
+                           "Expect superclass method name.")]
+    (add-expr after-idt (ast/super (current-token parser) (current-token after-dot)))))
+
 (defn- primary [parser]
   (cond 
     (match? parser :false) (add-literal parser false)
     (match? parser :true) (add-literal parser true)
     (match? parser :nil) (add-literal parser nil)
     (match? parser :number :string) (add-literal parser (:literal (current-token parser)))
+    (match? parser :super) (add-super parser)
     (match? parser :this) (add-expr (advance parser) (ast/this-expr (current-token parser)))
     
     ;; TODO: Weird advance pos
@@ -482,3 +490,5 @@ class Breakfast {
 (comment (test-parser "this.something();"))
 
 (comment (test-parser "class Bar < Foo {}"))
+(comment (test-parser "super.cook();"))
+(comment (test-parser "print super;"))

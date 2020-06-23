@@ -60,6 +60,9 @@
 (defn this-expr [keyword]
   {:type :this-expr :keyword keyword})
 
+(defn super [keyword method]
+  {:type :super :keyword keyword :method method})
+
 
 
 (defmulti pretty-print
@@ -136,6 +139,9 @@
 
 (defmethod pretty-print :this-expr [_]
   "*this*")
+
+(defmethod pretty-print :super [{method :method}]
+  (format "(super %s)" (:text method)))
 
 
 (comment (pretty-print (binary (unary (scanner/token :minus "-")
