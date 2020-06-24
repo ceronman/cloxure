@@ -116,10 +116,9 @@
     (-> resolver
         (add-var (:name node) true)
         (resolve-superclass node)
-        
         (begin-scope)
         (add-var {:text "this"} true) ;; TODO: hacky!
-        (assoc :current-class :class)
+        (assoc :current-class (if (:superclass node) :subclass :class))
         (resolve-methods (:methods node))
         (assoc :current-class prev-class)
         (end-scope)
@@ -177,8 +176,13 @@
            "Cannot use 'this' outside of a class.")
     (resolve-local resolver this-expr (:keyword this-expr))))
 
-(defmethod resolve-locals :super [resolver super]
-  (resolve-local resolver super (:keyword super)))
+(defmethod resolve-locals :super [resolver super-expr]
+  (case (:current-class resolver)
+    :subclass (resolve-local resolver super-expr (:keyword super-expr))
+    nil (error resolver (:keyword super-expr) 
+               "Cannot use 'super' outside of a class.")
+    (error resolver (:keyword super-expr) 
+           "Cannot use 'super' in a class with no superclass.")))
 
 (defmethod resolve-locals :return-stmt [resolver return-stmt]
   (if (nil? (:current-fn resolver))
@@ -244,3 +248,19 @@
 
 (comment (test-resolver
           "fun test(one, two) { print one; }"))
+
+(comment (test-resolver
+          "return 1;"))
+
+(comment (test-resolver "
+class Eclair {
+  cook() {
+    super.cook();
+    print 1;
+  }
+}
+"))
+
+(comment (test-resolver "
+super.notEvenInAClass ();
+"))
