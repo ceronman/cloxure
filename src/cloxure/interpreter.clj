@@ -38,7 +38,8 @@
     (runtime-error (format "Undefined variable %s" name))))
 
 (defn- env-declare! [env name value]
-  (swap! env assoc name value))
+  (swap! env assoc name value)
+  env)
 
 (defn- env-assign! [env name value]
   (if (contains? @env name)
@@ -225,25 +226,12 @@
     (env-declare! env "this" instance)
     (->LoxFunction (:declaration lox-fn) env (:initializer? lox-fn))))
 
-(defrecord LoxClass [name superclass methods]
-  LoxCallable
-  (arity [this]
-    (if-let [initializer (find-method this "init")]
-      (arity initializer)
-      0))
-  (call [this state args]
-    (let [instance (new-instance this)
-          initializer (find-method this "init")
-          state (if initializer
-                  (call (lox-fn-bind initializer instance) state args)
-                  state)]
-      (assoc state :result instance))))
 
 (defn find-method [lox-class name]
   (let [{:keys [methods superclass]} lox-class]
     (if-let [method (get methods name)]
       method
-      (if superclass 
+      (if superclass
         (recur superclass name)
         nil))))
 
@@ -261,6 +249,20 @@
       method (lox-fn-bind method object)
       (contains? @fields name) (get @fields name)
       :else (runtime-error (str "Undefined property '" name "'.")))))
+
+(defrecord LoxClass [name superclass methods]
+  LoxCallable
+  (arity [this]
+    (if-let [initializer (find-method this "init")]
+      (arity initializer)
+      0))
+  (call [this state args]
+    (let [instance (new-instance this)
+          initializer (find-method this "init")
+          state (if initializer
+                  (call (lox-fn-bind initializer instance) state args)
+                  state)]
+      (assoc state :result instance))))
 
 (defn- instance-set! [object name-token value]
   (swap! (:fields object) assoc (:text name-token) value))
@@ -286,6 +288,18 @@
         (instance-set! object name-token value)
         (assoc state :result value))
       (runtime-error "Only instances have properties."))))
+
+(defmethod evaluate :super [state super-expr]
+  (let [distance (get-in state [:locals super-expr])
+        env (env-ancestor (:environment state) distance)
+        lox-class (env-get env "super")
+        env (env-ancestor (:environment state) (dec distance))
+        object (env-get env "this")
+        method-name (:text (:method super-expr))
+        method (find-method lox-class method-name)]
+    (if method
+      (assoc state :result (lox-fn-bind method object))
+      (runtime-error (str "Undefined property '" method-name "'.")))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -321,11 +335,14 @@
     (assoc state :result nil)))
 
 (defmethod evaluate :class-stmt [state class-stmt]
-  (let [state (evaluate-superclass state class-stmt)
+  (let [name-token (:name-token class-stmt)
+        state (evaluate-superclass state class-stmt)
         superclass (:result state)
-        name-token (:name-token class-stmt)
         state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
         env (:environment state)
+        env (if superclass 
+              (env-declare! (new-scope env) "super" superclass) 
+              env)
         methods (->> (:methods class-stmt)
                      (map (fn [fun-stmt]
                             (let [name (:text (:name fun-stmt))]
@@ -729,6 +746,29 @@ class BostonCream < Doughnut {
 }
 
 BostonCream().cook();
+"))
+
+(comment
+  (test-interpreter "
+class A {
+  method() {
+    print \"A method\";
+  }
+}
+
+class B < A {
+  method() {
+    print \"B method\";
+  }
+
+  test() {
+    super.method();
+  }
+}
+
+class C < B {}
+
+C().test();
 "))
 
 

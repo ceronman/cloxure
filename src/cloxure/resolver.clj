@@ -32,10 +32,11 @@
       (contains? (peek scopes) (:text name-token)) (add-local resolver node pos)
       :else (recur (inc pos) (rest scopes)))))
 
-(defn- with-scope [resolver f & args]
-  (let [resolver (update resolver :scopes conj {})
-        resolver (apply f resolver args)]
-    (update resolver :scopes pop)))
+(defn- begin-scope [resolver]
+  (update resolver :scopes conj {}))
+
+(defn- end-scope [resolver]
+  (update resolver :scopes pop))
 
 (defmulti resolve-locals
   "Statically resolves scoping of variables"
@@ -45,7 +46,10 @@
   (reduce resolve-locals resolver statements))
 
 (defmethod resolve-locals :block [resolver node]
-  (with-scope resolver resolve-statements (:statements node)))
+  (-> resolver
+      (begin-scope)
+      (resolve-statements (:statements node))
+      (end-scope)))
 
 (defmethod resolve-locals :var-stmt [resolver node]
   (let [name-token (:name-token node)
@@ -71,13 +75,13 @@
 
 (defn- resolve-function [resolver fun-stmt fn-type]
   (let [prev-fn (:current-fn resolver)]
-    (with-scope resolver 
-      (fn [resolver]
-        (-> resolver
-            (assoc :current-fn fn-type)
-            (add-vars (:params fun-stmt) true)
-            (resolve-statements (:body fun-stmt))
-            (assoc :current-fn prev-fn))))))
+    (-> resolver
+        (begin-scope)
+        (assoc :current-fn fn-type)
+        (add-vars (:params fun-stmt) true)
+        (resolve-statements (:body fun-stmt))
+        (assoc :current-fn prev-fn)
+        (end-scope))))
 
 (defmethod resolve-locals :fun-stmt [resolver node]
   (-> resolver
@@ -101,7 +105,10 @@
         (error resolver 
                (:name-token superclass) 
                "A class cannot inherit from itself.")
-        (resolve-locals resolver superclass))
+        (-> resolver
+            (resolve-locals superclass)
+            (begin-scope)
+            (add-var {:text "super"} true)))
       resolver)))
 
 (defmethod resolve-locals :class-stmt [resolver node]
@@ -109,13 +116,14 @@
     (-> resolver
         (add-var (:name node) true)
         (resolve-superclass node)
-        (with-scope
-          (fn [resolver]
-            (-> resolver
-                (assoc :current-class :class)
-                (add-var {:text "this"} true) ;; TODO: hacky!
-                (resolve-methods (:methods node))
-                (assoc :current-class prev-class)))))))
+        
+        (begin-scope)
+        (add-var {:text "this"} true) ;; TODO: hacky!
+        (assoc :current-class :class)
+        (resolve-methods (:methods node))
+        (assoc :current-class prev-class)
+        (end-scope)
+        (cond-> (:superclass node) (end-scope)))))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
@@ -168,6 +176,9 @@
            (:keyword this-expr)
            "Cannot use 'this' outside of a class.")
     (resolve-local resolver this-expr (:keyword this-expr))))
+
+(defmethod resolve-locals :super [resolver super]
+  (resolve-local resolver super (:keyword super)))
 
 (defmethod resolve-locals :return-stmt [resolver return-stmt]
   (if (nil? (:current-fn resolver))
