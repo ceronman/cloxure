@@ -17,12 +17,13 @@
 (def builtins
   {"time" time-builtin})
 
-(defn- new-state [locals]
+(defn new-interpreter-state []
   (let [globals (atom (assoc builtins :enclosing nil))]
     {:result nil
+     :errors []
      :globals globals
      :environment globals
-     :locals locals}))
+     :locals {}}))
 
 (defn- runtime-error [message]
   (throw (ex-info message {:type :runtime})))
@@ -351,19 +352,17 @@
         lox-class (->LoxClass (:text name-token) superclass methods)]
     (assign-variable state name-token class-stmt lox-class)))
 
-(defn interpret [statements locals]
-  (loop [state (new-state locals)
-         statements statements]
-    (if (empty? statements)
-      (:result state)
-      ;; TODO: replace with reduce?
-      (let [state (try
-                    (evaluate state (first statements))
-                    (catch clojure.lang.ExceptionInfo e
-                      (println "ERROR" (ex-message e) (prn-str (ex-data e)))
-                      (assoc state :result nil)))]
-        (recur state (rest statements))))))
 
+(defn interpret [state statements locals]
+  (try
+    (evaluate-statements (update state :locals merge locals) statements)
+    (catch clojure.lang.ExceptionInfo e
+      (case (:type (ex-data e))
+        :runtime (-> state
+                     (update :errors conj (ex-message e))
+                     (assoc :result nil))
+        (throw e)))))
+  
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
 (require '[cloxure.resolver :as resolver])
@@ -378,7 +377,10 @@
           (let [{errors :errors locals :locals} (resolver/locals statements)]
             (if (seq errors)
               errors
-              (interpret statements locals))))))))
+              (let [state (new-interpreter-state)
+                    {errors :errors} (interpret state statements locals)]
+                (when (seq errors)
+                  (println "ERROR", (prn-str errors)))))))))))
 
 (comment
   (test-interpreter

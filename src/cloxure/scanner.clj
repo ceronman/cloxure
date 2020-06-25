@@ -39,7 +39,7 @@
 (defn- advance [scanner]
   (update scanner :current inc))
 
-(defn token
+(defn- token
   ([type text]
    (token type text nil 1))
   ([type text literal line]
