@@ -152,7 +152,7 @@
       (cond 
         (is-digit? char) (add-number scanner)
         (is-alpha? char) (add-identifier scanner)
-        :else (error scanner (str "Unexpected character: " char))))))
+        :else (error scanner (str "Unexpected character."))))))
 
 (defn- next-token [scanner]
   (assoc scanner :start (:current scanner)))

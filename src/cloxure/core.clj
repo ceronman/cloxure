@@ -4,29 +4,42 @@
   (:require [cloxure.resolver :as resolver])
   (:require [cloxure.interpreter :as interpreter]))
 
-(defn- exit-with-error [message code]
+(defn- print-error [fmt & args]
   (binding [*out* *err*]
-    (println message)
-    (System/exit code)))
+    (apply printf (str fmt "\n") args)
+    (flush)))
+
+(defn- exit-with-error [message code]
+  (print-error message)
+  (System/exit code))
+
+(defn- format-error [error]
+  (if-let [token (:token error)]
+    (let [line (:line token)
+          location (case (:type token) :eof "end" (format "'%s'" (:text token)))]
+      (format "[line %d] Error at %s: %s" line location (:message error)))
+    (if (:line error)
+      (format "[line %d] Error: %s" (:line error) (:message error))
+      (prn-str "UNKNOWN ERROR: " error))))
 
 (defn- report-errors [state errors]
-  (println "ERROR" (prn-str errors))
+  (doseq [error errors]
+    (print-error (format-error error)))
   (assoc state :errors []))
 
 (defn- run [state source]
-  (let [{:keys [errors tokens]} (scanner/scan source)]
+  (let [{tokens :tokens scanner-errors :errors} (scanner/scan source)
+        {statements :statements parser-errors :errors} (parser/parse tokens)
+        errors (concat scanner-errors parser-errors)]
     (if (seq errors)
       (report-errors state errors)
-      (let [{:keys [errors statements]} (parser/parse tokens)]
-        (if (seq errors) 
+      (let [{:keys [errors locals]} (resolver/locals statements)]
+        (if (seq errors)
           (report-errors state errors)
-          (let [{:keys [errors locals]} (resolver/locals statements)]
-            (if (seq errors)
-              (report-errors state errors)
-              (let [state (interpreter/interpret state statements locals)]
-                (if (seq (:errors state))
-                  (report-errors state (:errors state))
-                  state)))))))))
+          (let [state (interpreter/interpret state statements locals)]
+            (if (seq (:errors state))
+              (report-errors state (:errors state))
+              state)))))))
 
 (defn- run-file [filename]
   (try

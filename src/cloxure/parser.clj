@@ -72,9 +72,7 @@
   (some #(check? parser %) token-types))
 
 (defn- add-error [parser message]
-  (let [token (current-token parser)
-        e {:line (:line token) :message message :loc (:text token)}]
-    (update parser :errors conj e)))
+  (update parser :errors conj {:token (current-token parser) :message message}))
 
 (defn- error [parser message]
   (let [parser (add-error parser message)]
@@ -122,7 +120,7 @@
     (match? parser :lparen) (let [middle (expression (advance parser))]
                               (add-expr (consume middle :rparen "Expect ')' after expression.") 
                                         (ast/group (:expr middle))))
-    :else (error parser "Expected expression")))
+    :else (error parser "Expect expression")))
 
 (defn- finish-call [after-lparen callee]
   (loop [parser after-lparen

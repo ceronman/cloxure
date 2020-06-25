@@ -8,8 +8,7 @@
    :current-class nil})
 
 (defn- error [resolver token message]
-  (let [e {:line (:line token) :message message :loc (:text token)}]
-    (update resolver :errors conj e)))
+  (update resolver :errors conj {:token token :message message}))
 
 (defn- add-var [resolver name-token ready?]
   (let [[scope & others] (:scopes resolver)]
