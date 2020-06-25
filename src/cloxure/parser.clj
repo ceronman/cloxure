@@ -72,7 +72,9 @@
   (some #(check? parser %) token-types))
 
 (defn- add-error [parser message]
-  (update parser :errors conj {:token (current-token parser) :message message}))
+  (update parser :errors conj {:type :parser
+                               :token (current-token parser) 
+                               :message message}))
 
 (defn- error [parser message]
   (let [parser (add-error parser message)]

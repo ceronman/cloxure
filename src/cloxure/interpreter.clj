@@ -25,27 +25,34 @@
      :environment globals
      :locals {}}))
 
-(defn- runtime-error [message]
-  (throw (ex-info message {:type :runtime})))
+(defn- runtime-error [token message]
+  (throw (ex-info "Lox Runtime Error" 
+                  {:type :runtime :token token :message message})))
 
-(defn env-ancestor [env distance]
+(defn- env-ancestor [env distance]
   (if (zero? distance)
     env
     (recur (:enclosing @env) (dec distance))))
 
-(defn- env-get [env name]
-  (if (contains? @env name)
-    (get @env name)
-    (runtime-error (format "Undefined variable %s" name))))
+(defn- env-get-at [env distance name]
+  (let [env (env-ancestor env distance)]
+    (get @env name)))
+
+(defn- env-get [env name-token]
+  (let [name (:text name-token)]
+   (if (contains? @env name)
+     (get @env name)
+     (runtime-error name-token (format "Undefined variable '%s'." name)))))
 
 (defn- env-declare! [env name value]
   (swap! env assoc name value)
   env)
 
-(defn- env-assign! [env name value]
-  (if (contains? @env name)
-    (swap! env assoc name value)
-    (runtime-error (format "Undefined variable %s" name))))
+(defn- env-assign! [env name-token value]
+  (let [name (:text name-token)]
+    (if (contains? @env name)
+     (swap! env assoc name value)
+     (runtime-error name-token (format "Undefined variable '%s'." name)))))
 
 (defn- declare-variable [state name-token value]
   (let [env (:environment state)]
@@ -53,18 +60,16 @@
     state))
 
 (defn- lookup-variable [state name-token expr]
-  (let [distance (get-in state [:locals expr])
-        env (if (nil? distance)
-              (:globals state)
-              (env-ancestor (:environment state) distance))]
-    (assoc state :result (env-get env (:text name-token)))))
+  (if-let [distance (get-in state [:locals expr])]
+    (assoc state :result (env-get-at (:environment state) distance (:text state)))
+    (assoc state :result (env-get (:globals state) name-token))))
 
 (defn- assign-variable [state name-token expr value]
   (let [distance (get-in state [:locals expr])
         env (if (nil? distance)
               (:globals state)
               (env-ancestor (:environment state) distance))]
-    (env-assign! env (:text name-token) value)
+    (env-assign! env name-token value)
     state))
 
 (defn- new-scope [parent-env]
@@ -76,10 +81,10 @@
     (instance? Boolean value) value
     :else true))
 
-(defn- require-num [value]
-  (if (instance? Double value)
-    value
-    (runtime-error "Operand must be a number")))
+(defn- numeric-operation [op-token operator left right]
+  (if (and (instance? Double left) (instance? Double right))
+    (operator left right)
+    (runtime-error op-token "Operand must be a number")))
 
 (defmulti evaluate
   "Interprets a Lox AST"
@@ -109,20 +114,21 @@
            (case operator
              :bang_equal (not= left right)
              :equal_equal (= left right)
-             :greater (> (require-num left) (require-num right))
-             :greater_equal (>= (require-num left) (require-num right))
-             :less (< (require-num left) (require-num right))
-             :less_equal (<= (require-num left) (require-num right))
-             :minus (- (require-num left) (require-num right))
+             :greater (numeric-operation operator > left right)
+             :greater_equal (numeric-operation operator >= left right)
+             :less (numeric-operation operator < left right)
+             :less_equal (numeric-operation operator <= left right)
+             :minus (numeric-operation operator - left right)
              :plus (cond
                      (and (instance? Double left) (instance? Double right))
                      (+ left right)
                      (and (instance? String left) (instance? String right))
                      (str left right)
                      :else
-                     (runtime-error "Operands must be two numbers or two strings."))
-             :slash (/ (require-num left) (require-num right))
-             :star (* (require-num left) (require-num right))))))
+                     (runtime-error operator 
+                                    "Operands must be two numbers or two strings."))
+             :slash (numeric-operation operator / left right)
+             :star (numeric-operation operator * left right)))))
 
 (defmethod evaluate :logical [state logical-expr]
   (let [state (evaluate state (:left logical-expr))
@@ -182,10 +188,11 @@
         arguments (:result state)]
     (cond
       (not (satisfies? LoxCallable callee))
-      (runtime-error "Can only call functions and classes.")
+      (runtime-error (:paren call-expr) "Can only call functions and classes.")
 
       (not= (arity callee) (count arguments))
-      (runtime-error (format "Expected %d arguments but got %d"
+      (runtime-error (:paren call-expr)
+                     (format "Expected %d arguments but got %d"
                              (:arity callee)
                              (count arguments)))
 
@@ -201,12 +208,12 @@
   (try
     (-> state
         (evaluate-statements statements)
-        (assoc :result (if initializer? (env-get closure "this") nil)))
+        (assoc :result (if initializer? (env-get-at closure 0 "this") nil)))
     ; TODO: Investigate custom exceptions
     (catch clojure.lang.ExceptionInfo e
       (let [{type :type state :state} (ex-data e)]
         (if (= type :return)
-          (if initializer? (assoc state :result (env-get closure "this")) state)
+          (if initializer? (assoc state :result (env-get-at closure 0 "this")) state)
           (throw e))))))
 
 (defrecord LoxFunction [declaration closure initializer?]
@@ -249,7 +256,7 @@
     (cond
       method (lox-fn-bind method object)
       (contains? @fields name) (get @fields name)
-      :else (runtime-error (str "Undefined property '" name "'.")))))
+      :else (runtime-error name-token (str "Undefined property '" name "'.")))))
 
 (defrecord LoxClass [name superclass methods]
   LoxCallable
@@ -277,7 +284,7 @@
         object (:result state)]
     (if (instance? LoxInstance object)
       (assoc state :result (instance-get object name-token))
-      (runtime-error "Only instances have properties."))))
+      (runtime-error name-token "Only instances have properties."))))
 
 (defmethod evaluate :set-expr [state set-expr]
   (let [name-token (:name-token set-expr)
@@ -288,19 +295,20 @@
             value (:result state)]
         (instance-set! object name-token value)
         (assoc state :result value))
-      (runtime-error "Only instances have properties."))))
+      (runtime-error name-token "Only instances have fields"))))
 
 (defmethod evaluate :super [state super-expr]
   (let [distance (get-in state [:locals super-expr])
-        env (env-ancestor (:environment state) distance)
-        lox-class (env-get env "super")
+        env (:environment state)
+        lox-class (env-get-at env distance "super")
         env (env-ancestor (:environment state) (dec distance))
-        object (env-get env "this")
+        object (env-get-at env (dec distance) "this")
         method-name (:text (:method super-expr))
         method (find-method lox-class method-name)]
     (if method
       (assoc state :result (lox-fn-bind method object))
-      (runtime-error (str "Undefined property '" method-name "'.")))))
+      (runtime-error (:method super-expr) 
+                     (str "Undefined property '" method-name "'.")))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -332,7 +340,7 @@
           value (:result state)]
       (if (instance? LoxClass value)
         state
-        (runtime-error "Superclass must be a class.")))
+        (runtime-error (:name-token superclass) "Superclass must be a class.")))
     (assoc state :result nil)))
 
 (defmethod evaluate :class-stmt [state class-stmt]
@@ -359,7 +367,7 @@
     (catch clojure.lang.ExceptionInfo e
       (case (:type (ex-data e))
         :runtime (-> state
-                     (update :errors conj (ex-message e))
+                     (update :errors conj (ex-data e))
                      (assoc :result nil))
         (throw e)))))
   

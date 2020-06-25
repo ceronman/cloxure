@@ -58,7 +58,9 @@
                                        (:line scanner)))))
 
 (defn- error [scanner message]
-  (update scanner :errors conj {:line (:line scanner) :message message}))
+  (update scanner :errors conj {:type :scanner
+                                :line (:line scanner) 
+                                :message message}))
 
 (defn- match [scanner expected]
   (and (not (is-at-end? scanner)) (= (current-char scanner) expected)))

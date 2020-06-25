@@ -14,13 +14,22 @@
   (System/exit code))
 
 (defn- format-error [error]
-  (if-let [token (:token error)]
-    (let [line (:line token)
-          location (case (:type token) :eof "end" (format "'%s'" (:text token)))]
+  (case (:type error)
+    (:parser :resolver)
+    (let [token (:token error)
+          line (:line token)
+          location (case (:type token)
+                     :eof "end"
+                     (format "'%s'" (:text token)))]
       (format "[line %d] Error at %s: %s" line location (:message error)))
-    (if (:line error)
-      (format "[line %d] Error: %s" (:line error) (:message error))
-      (prn-str "UNKNOWN ERROR: " error))))
+
+    :scanner
+    (format "[line %d] Error: %s" (:line error) (:message error))
+
+    :runtime
+    (format "%s\n[line %d]" (:message error) (:line (:token error)))
+
+    (throw (ex-info "Unkown error" error))))
 
 (defn- report-errors [state errors]
   (doseq [error errors]
