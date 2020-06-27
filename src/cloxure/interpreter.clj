@@ -61,7 +61,7 @@
 
 (defn- lookup-variable [state name-token expr]
   (if-let [distance (get-in state [:locals expr])]
-    (assoc state :result (env-get-at (:environment state) distance (:text state)))
+    (assoc state :result (env-get-at (:environment state) distance (:text name-token)))
     (assoc state :result (env-get (:globals state) name-token))))
 
 (defn- assign-variable [state name-token expr value]
@@ -791,6 +791,39 @@ class C < B {}
 
 C().test();
 "))
+
+(comment
+  (test-interpreter "
+class Foo {
+  getClosure() {
+    fun f() {
+      fun g() {
+        fun h() {
+          return this.toString();
+        }
+        return h;
+      }
+      return g;
+    }
+    return f;
+  }
+
+  toString() { return \"Foo\"; }
+}
+
+var closure = Foo().getClosure();
+print closure()()();
+"))
+
+(comment
+  (test-interpreter "
+fun g() {
+  var a = 1;
+  print a;
+}
+g();
+"))
+
 
 
 
