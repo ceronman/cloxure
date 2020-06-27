@@ -46,15 +46,19 @@
     (let [out (str/split-lines (.toString out-writer))
           err (str/split-lines (.toString err-writer))]
       (testing (.getPath file)
-       (check-output (:out expected) out)
-       (check-output (:err expected) err)))))
+        (check-output (:out expected) out)
+        (check-output (:err expected) err)))))
 
 ;; (def test-file
 ;;   (run-test-file (io/file "test/resources/if/class_in_then.lox")))
 
-(deftest all
-  (doseq [file (file-seq (io/file "test/resources"))]
-    (when (not (.isDirectory file))
-      (run-test-file file))))
+(defn add-test
+  "dynamically generated deftests."
+  [name test-fn]
+  (intern 'cloxure.core-test (with-meta (symbol name) {:test test-fn}) (fn [])))
 
-
+(doseq [file (file-seq (io/file "test/resources"))]
+  (when (not (.isDirectory file))
+    (let [filename (.getName file)]
+      (add-test (str "test_" (subs filename 0 (- (count filename) 4))) 
+                #(run-test-file file)))))
