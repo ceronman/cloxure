@@ -50,7 +50,7 @@
               (report-errors state (:errors state))
               state)))))))
 
-(defn- run-file [filename]
+(defn run-file [filename]
   (try
     (let [source (slurp filename)
           state (interpreter/new-interpreter-state)]

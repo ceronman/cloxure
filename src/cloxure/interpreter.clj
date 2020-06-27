@@ -140,9 +140,20 @@
       (and (= operator :and) (not left-truthy?)) state
       :else (evaluate state (:right logical-expr)))))
 
+(defn- stringify [value]
+  (cond
+    (nil? value) "nil"
+    (instance? Double value) (let [s (str value)]
+                               (if (.endsWith s ".0")
+                                 (subs s 0 (- (count s) 2))
+                                 s))
+    (instance? String value) value
+    (instance? Boolean value) (if value "true" "false")
+    :else "<???>"))
+
 (defmethod evaluate :print-stmt [state print-stmt]
   (let [state (evaluate state (:expression print-stmt))]
-    (assoc state :result (println (:result state)))))
+    (assoc state :result (println (stringify (:result state))))))
 
 (defmethod evaluate :var-stmt [state var-stmt]
   (let [initializer (:initializer var-stmt)

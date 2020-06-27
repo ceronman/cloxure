@@ -122,7 +122,7 @@
     (match? parser :lparen) (let [middle (expression (advance parser))]
                               (add-expr (consume middle :rparen "Expect ')' after expression.") 
                                         (ast/group (:expr middle))))
-    :else (error parser "Expect expression")))
+    :else (error parser "Expect expression.")))
 
 (defn- finish-call [after-lparen callee]
   (loop [parser after-lparen
