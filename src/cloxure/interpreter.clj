@@ -6,13 +6,15 @@
 (defprotocol LoxCallable
   "Represent a callable object in Lox"
   (arity [this])
-  (call [this state arguments]))
+  (call [this state arguments])
+  (to-string [this]))
 
 (def time-builtin
   (reify LoxCallable
     (call [this state _]
       (assoc state :result (/ (System/currentTimeMillis) 1000.0)))
-    (arity [this] 0)))
+    (arity [this] 0)
+    (to-string [this] "<native-fn>")))
 
 (def builtins
   {"time" time-builtin})
@@ -84,7 +86,7 @@
 (defn- numeric-operation [op-token operator left right]
   (if (and (instance? Double left) (instance? Double right))
     (operator left right)
-    (runtime-error op-token "Operand must be a number")))
+    (runtime-error op-token "Operands must be numbers.")))
 
 (defmulti evaluate
   "Interprets a Lox AST"
@@ -109,26 +111,27 @@
         left (:result state)
         state (evaluate state (:right binary-expr))
         right (:result state)
+        op-token (:operator binary-expr)
         operator (:type (:operator binary-expr))]
     (assoc state :result
            (case operator
              :bang_equal (not= left right)
              :equal_equal (= left right)
-             :greater (numeric-operation operator > left right)
-             :greater_equal (numeric-operation operator >= left right)
-             :less (numeric-operation operator < left right)
-             :less_equal (numeric-operation operator <= left right)
-             :minus (numeric-operation operator - left right)
+             :greater (numeric-operation op-token > left right)
+             :greater_equal (numeric-operation op-token >= left right)
+             :less (numeric-operation op-token < left right)
+             :less_equal (numeric-operation op-token <= left right)
+             :minus (numeric-operation op-token - left right)
              :plus (cond
                      (and (instance? Double left) (instance? Double right))
                      (+ left right)
                      (and (instance? String left) (instance? String right))
                      (str left right)
                      :else
-                     (runtime-error operator 
+                     (runtime-error op-token 
                                     "Operands must be two numbers or two strings."))
-             :slash (numeric-operation operator / left right)
-             :star (numeric-operation operator * left right)))))
+             :slash (numeric-operation op-token / left right)
+             :star (numeric-operation op-token * left right)))))
 
 (defmethod evaluate :logical [state logical-expr]
   (let [state (evaluate state (:left logical-expr))
@@ -139,21 +142,6 @@
       (and (= operator :or) left-truthy?) state
       (and (= operator :and) (not left-truthy?)) state
       :else (evaluate state (:right logical-expr)))))
-
-(defn- stringify [value]
-  (cond
-    (nil? value) "nil"
-    (instance? Double value) (let [s (str value)]
-                               (if (.endsWith s ".0")
-                                 (subs s 0 (- (count s) 2))
-                                 s))
-    (instance? String value) value
-    (instance? Boolean value) (if value "true" "false")
-    :else "<???>"))
-
-(defmethod evaluate :print-stmt [state print-stmt]
-  (let [state (evaluate state (:expression print-stmt))]
-    (assoc state :result (println (stringify (:result state))))))
 
 (defmethod evaluate :var-stmt [state var-stmt]
   (let [initializer (:initializer var-stmt)
@@ -203,8 +191,8 @@
 
       (not= (arity callee) (count arguments))
       (runtime-error (:paren call-expr)
-                     (format "Expected %d arguments but got %d"
-                             (:arity callee)
+                     (format "Expected %d arguments but got %d."
+                             (arity callee)
                              (count arguments)))
 
       :else (call callee state arguments))))
@@ -230,6 +218,7 @@
 (defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
   (arity [this] (-> this :declaration :params count))
+  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name :text])))
   (call [this state args]
         (let [declaration (:declaration this)
               env (:environment state)
@@ -275,6 +264,7 @@
     (if-let [initializer (find-method this "init")]
       (arity initializer)
       0))
+  (to-string [this] (:name this))
   (call [this state args]
     (let [instance (new-instance this)
           initializer (find-method this "init")
@@ -306,7 +296,7 @@
             value (:result state)]
         (instance-set! object name-token value)
         (assoc state :result value))
-      (runtime-error name-token "Only instances have fields"))))
+      (runtime-error name-token "Only instances have fields."))))
 
 (defmethod evaluate :super [state super-expr]
   (let [distance (get-in state [:locals super-expr])
@@ -320,6 +310,24 @@
       (assoc state :result (lox-fn-bind method object))
       (runtime-error (:method super-expr) 
                      (str "Undefined property '" method-name "'.")))))
+
+;; TODO: Polymorphism please!!!
+(defn- stringify [value]
+  (cond
+    (nil? value) "nil"
+    (instance? Double value) (let [s (str value)]
+                               (if (.endsWith s ".0")
+                                 (subs s 0 (- (count s) 2))
+                                 s))
+    (instance? String value) value
+    (instance? Boolean value) (if value "true" "false")
+    (instance? LoxInstance value) (format "%s instance" (-> value :lox-class :name))
+    (satisfies? LoxCallable value) (to-string value)
+    :else "<???>"))
+
+(defmethod evaluate :print-stmt [state print-stmt]
+  (let [state (evaluate state (:expression print-stmt))]
+    (assoc state :result (println (stringify (:result state))))))
 
 (defmethod evaluate :if-stmt [state if-stmt]
   (let [state (evaluate state (:condition if-stmt))]
@@ -822,6 +830,18 @@ fun g() {
   print a;
 }
 g();
+"))
+
+(comment
+  (test-interpreter "
+\"s\" + nil;
+"))
+
+
+(comment
+  (test-interpreter "
+class Foo { a(){} }
+print Foo().a;
 "))
 
 

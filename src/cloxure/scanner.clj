@@ -93,7 +93,7 @@
 
 (defn- add-string [scanner]
   (cond 
-    (is-at-end? scanner) (error scanner "Unterminated string")
+    (is-at-end? scanner) (error scanner "Unterminated string.")
     (= (current-char scanner) \") (let [advanced (advance scanner)]
                                     (add-token advanced :string (subs (:source advanced)
                                                                      (inc (:start advanced))

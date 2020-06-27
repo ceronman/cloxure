@@ -131,7 +131,7 @@
       (add-expr (advance parser) (ast/call callee (current-token parser) arguments))
       (let [after-arg (expression parser)
             after-arg (if (>= (count arguments) 255)
-                        (add-error after-arg "Cannot have more than 255 arguments.")
+                        (add-error parser "Cannot have more than 255 arguments.")
                         after-arg)
             arguments (conj arguments (:expr after-arg))]
         (if (match? after-arg :comma)
@@ -208,7 +208,7 @@
                                                         (:name-token left-expr)
                                                         (:expr after-value)))
           
-          (error after-equals "Invalid assignment target.")))
+          (error left "Invalid assignment target.")))
       left)))
 
 (defn- expression [parser]
@@ -230,7 +230,7 @@
 
 (defn- expression-stmt [parser]
   (let [after-expression (expression parser)
-        after-semicolon (consume after-expression :semicolon "Expect ';' after value.")]
+        after-semicolon (consume after-expression :semicolon "Expect ';' after expression.")]
     (add-expr after-semicolon (:expr after-semicolon))))
 
 (declare declaration)
@@ -263,7 +263,7 @@
   (let [after-identifier (consume after-var :identifier "Expect variable name.")
         initializer? (match? after-identifier :equal)
         before-semicolon (if initializer? (expression (advance after-identifier)) after-identifier)
-        after-semicolon (consume before-semicolon :semicolon "Expect ';' after value.")]
+        after-semicolon (consume before-semicolon :semicolon "Expect ';' after expression.")]
     (add-expr after-semicolon (ast/var-stmt (current-token after-var)
                                             (if initializer? (:expr before-semicolon) nil)))))
 (defn- parameters [after-lparen]
@@ -273,7 +273,7 @@
            params []]
       (let [after-param (consume parser :identifier "Expect parameter name.")
             after-param (if (>= (count params) 255)
-                          (add-error after-param "Cannot have more than 255 parameters.")
+                          (add-error parser "Cannot have more than 255 parameters.")
                           after-param)
             params (conj params (current-token parser))]
         (if (match? after-param :comma)

@@ -23,7 +23,7 @@
         (if-let [matched (re-find runtime-error-re line)]
           (update expected :err conj
                   (nth matched 1)
-                  (format "[line %d]" n))
+                  (format "[line %d]" (inc n)))
           expected)))))
 
 (defn- parse-comments [file]
