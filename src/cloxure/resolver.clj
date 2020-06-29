@@ -1,7 +1,7 @@
 (ns cloxure.resolver)
 
 (defn- new-resolver []
-  {:scopes '()
+  {:scopes '() ; TODO: replace list with vector?
    :locals {}
    :errors []
    :current-fn nil
@@ -13,10 +13,14 @@
                                  :message message}))
 
 (defn- add-var [resolver name-token ready?]
-  (let [[scope & others] (:scopes resolver)]
+  (let [[scope & others] (:scopes resolver)
+        name (:text name-token)]
     (if scope
-      (let [new-scope (assoc scope (:text name-token) ready?)]
-        (assoc resolver :scopes (conj others new-scope)))
+      (if (and (not ready?) (contains? scope name))
+        (error resolver name-token 
+               "Variable with this name already declared in this scope.")
+        (let [new-scope (assoc scope (:text name-token) ready?)]
+          (assoc resolver :scopes (conj others new-scope))))
       resolver)))
 
 (defn- add-vars [resolver name-tokens ready?]
@@ -115,7 +119,7 @@
 (defmethod resolve-locals :class-stmt [resolver node]
   (let [prev-class (:current-class resolver)]
     (-> resolver
-        (add-var (:name node) true)
+        (add-var (:name-token node) true)
         (resolve-superclass node)
         (begin-scope)
         (add-var {:text "this"} true) ;; TODO: hacky!

@@ -74,8 +74,11 @@
     (env-assign! env name-token value)
     state))
 
-(defn- new-scope [parent-env]
-  (atom {:enclosing parent-env}))
+(defn- push-scope [env]
+  (atom {:enclosing env}))
+
+(defn- pop-scope [env]
+  (:enclosing (deref env)))
 
 (defn- truthy? [value]
   (cond
@@ -83,10 +86,15 @@
     (instance? Boolean value) value
     :else true))
 
-(defn- numeric-operation [op-token operator left right]
-  (if (and (instance? Double left) (instance? Double right))
-    (operator left right)
-    (runtime-error op-token "Operands must be numbers.")))
+(defn- numeric-operation 
+  ([op-token operator left right]
+   (if (and (instance? Double left) (instance? Double right))
+     (operator left right)
+     (runtime-error op-token "Operands must be numbers.")))
+  ([op-token operator right]
+   (if (instance? Double right)
+     (operator right)
+     (runtime-error op-token "Operand must be a number."))))
 
 (defmulti evaluate
   "Interprets a Lox AST"
@@ -103,7 +111,7 @@
         right (:result state)
         operator (:type (:operator unary-expr))]
     (assoc state :result (case operator
-                           :minus (- right)
+                           :minus (numeric-operation (:operator unary-expr) - right)
                            :bang (not (truthy? right))))))
 
 (defmethod evaluate :binary [state binary-expr]
@@ -164,12 +172,11 @@
   (reduce evaluate state statements))
 
 (defmethod evaluate :block [state block-stmt]
-  (let [env (:environment state)]
-    (-> state
-        (assoc :environment (new-scope env))
-        (evaluate-statements (:statements block-stmt))
-        (assoc :environment env)
-        (assoc :result nil))))
+  (-> state
+      (update :environment push-scope)
+      (evaluate-statements (:statements block-stmt))
+      (update :environment pop-scope)
+      (assoc :result nil)))
 
 (defn- evaluate-args [state args]
   (reduce
@@ -224,13 +231,13 @@
               env (:environment state)
               closure (:closure this)]
           (-> state
-              (assoc :environment (new-scope closure))
+              (assoc :environment (push-scope closure))
               (declare-fn-args (:params declaration) args)
               (execute-fn-body (:body declaration) closure (:initializer? this))
               (assoc :environment env)))))
 
 (defn lox-fn-bind [lox-fn instance]
-  (let [env (new-scope (:closure lox-fn))]
+  (let [env (push-scope (:closure lox-fn))]
     (env-declare! env "this" instance)
     (->LoxFunction (:declaration lox-fn) env (:initializer? lox-fn))))
 
@@ -366,10 +373,9 @@
   (let [name-token (:name-token class-stmt)
         state (evaluate-superclass state class-stmt)
         superclass (:result state)
-        state (declare-variable state name-token nil) ; TODO ?? predeclare necesssary?
         env (:environment state)
         env (if superclass 
-              (env-declare! (new-scope env) "super" superclass) 
+              (env-declare! (push-scope env) "super" superclass) 
               env)
         methods (->> (:methods class-stmt)
                      (map (fn [fun-stmt]
@@ -377,7 +383,7 @@
                               [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
         lox-class (->LoxClass (:text name-token) superclass methods)]
-    (assign-variable state name-token class-stmt lox-class)))
+    (declare-variable state name-token lox-class)))
 
 
 (defn interpret [state statements locals]
@@ -844,7 +850,10 @@ class Foo { a(){} }
 print Foo().a;
 "))
 
-
-
-
-
+(comment
+  (test-interpreter "
+{
+  class A {}
+  print A;
+}
+"))
