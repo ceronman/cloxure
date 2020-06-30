@@ -852,8 +852,9 @@ print Foo().a;
 
 (comment
   (test-interpreter "
-{
-  class A {}
-  print A;
+fun foo(arg,
+        arg) { // Error at 'arg': Variable with this name already declared in this scope.
+  \"body\";
 }
+
 "))

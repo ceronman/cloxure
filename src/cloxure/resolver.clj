@@ -83,6 +83,7 @@
     (-> resolver
         (begin-scope)
         (assoc :current-fn fn-type)
+        (add-vars (:params fun-stmt) false)
         (add-vars (:params fun-stmt) true)
         (resolve-statements (:body fun-stmt))
         (assoc :current-fn prev-fn)
