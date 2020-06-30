@@ -102,32 +102,31 @@
    resolver
    methods))
 
-(defn- resolve-superclass [resolver class-stmt]
-  (let [name (:text (:name-token class-stmt))
-        superclass (:superclass class-stmt)]
-    (if superclass
-      (if (= name (:text (:name-token superclass)))
-        (error resolver 
-               (:name-token superclass) 
-               "A class cannot inherit from itself.")
-        (-> resolver
-            (resolve-locals superclass)
-            (begin-scope)
-            (add-var {:text "super"} true)))
-      resolver)))
+(defn- resolve-superclass [resolver superclass]
+  (-> resolver
+      (resolve-locals superclass)
+      (begin-scope)
+      (add-var {:text "super"} true)))
 
 (defmethod resolve-locals :class-stmt [resolver node]
-  (let [prev-class (:current-class resolver)]
-    (-> resolver
-        (add-var (:name-token node) true)
-        (resolve-superclass node)
-        (begin-scope)
-        (add-var {:text "this"} true) ;; TODO: hacky!
-        (assoc :current-class (if (:superclass node) :subclass :class))
-        (resolve-methods (:methods node))
-        (assoc :current-class prev-class)
-        (end-scope)
-        (cond-> (:superclass node) (end-scope)))))
+  (let [prev-class (:current-class resolver)
+        name (:text (:name-token node))
+        superclass (:superclass node)
+        superclass-name (:text (:name-token superclass))]
+    (if (and superclass (= name superclass-name))
+      (error resolver
+             (:name-token superclass)
+             "A class cannot inherit from itself.")
+      (-> resolver
+          (add-var (:name-token node) true)
+          (cond-> superclass (resolve-superclass superclass))
+          (begin-scope)
+          (add-var {:text "this"} true) ;; TODO: hacky!
+          (assoc :current-class (if (:superclass node) :subclass :class))
+          (resolve-methods (:methods node))
+          (assoc :current-class prev-class)
+          (end-scope)
+          (cond-> superclass (end-scope))))))
 
 (defmethod resolve-locals :if-stmt [resolver node]
   (-> resolver
@@ -268,4 +267,10 @@ class Eclair {
 
 (comment (test-resolver "
 super.notEvenInAClass ();
+"))
+
+(comment (test-resolver "
+{
+  class Foo < Foo {} // Error at 'Foo': A class cannot inherit from itself.
+}
 "))
