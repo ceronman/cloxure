@@ -258,12 +258,12 @@
 
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
-        name (:text name-token)
-        method (find-method (:lox-class object) name)]
-    (cond
-      method (lox-fn-bind method object)
-      (contains? @fields name) (get @fields name)
-      :else (runtime-error name-token (str "Undefined property '" name "'.")))))
+        name (:text name-token)]
+    (if (contains? @fields name)
+      (get @fields name)
+      (if-let [method (find-method (:lox-class object) name)]
+        (lox-fn-bind method object)
+        (runtime-error name-token (str "Undefined property '" name "'."))))))
 
 (defrecord LoxClass [name superclass methods]
   LoxCallable
