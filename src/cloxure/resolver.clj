@@ -14,12 +14,12 @@
 
 (defn- add-var [resolver name-token ready?]
   (let [[scope & others] (:scopes resolver)
-        name (:text name-token)]
+        name (:lexeme name-token)]
     (if scope
       (if (and (not ready?) (contains? scope name))
         (error resolver name-token 
                "Variable with this name already declared in this scope.")
-        (let [new-scope (assoc scope (:text name-token) ready?)]
+        (let [new-scope (assoc scope (:lexeme name-token) ready?)]
           (assoc resolver :scopes (conj others new-scope))))
       resolver)))
 
@@ -34,7 +34,7 @@
          scopes (:scopes resolver)]
     (cond
       (empty? scopes) resolver
-      (contains? (peek scopes) (:text name-token)) (add-local resolver node pos)
+      (contains? (peek scopes) (:lexeme name-token)) (add-local resolver node pos)
       :else (recur (inc pos) (rest scopes)))))
 
 (defn- begin-scope [resolver]
@@ -66,7 +66,7 @@
 (defmethod resolve-locals :variable [resolver node]
   (let [name-token (:name-token node)
         [scope & _] (:scopes resolver)
-        resolver (if (and scope (false? (get scope (:text name-token))))
+        resolver (if (and scope (false? (get scope (:lexeme name-token))))
                    (error resolver
                           name-token
                           "Cannot read local variable in its own initializer.")
@@ -97,7 +97,7 @@
 (defn- resolve-methods [resolver methods]
   (reduce
    (fn [resolver method]
-     (if (= (-> method :name :text) "init")
+     (if (= (-> method :name :lexeme) "init")
        (resolve-function resolver method :initializer)
        (resolve-function resolver method :method)))
    resolver
@@ -107,13 +107,13 @@
   (-> resolver
       (resolve-locals superclass)
       (begin-scope)
-      (add-var {:text "super"} true)))
+      (add-var {:lexeme "super"} true)))
 
 (defmethod resolve-locals :class-stmt [resolver node]
   (let [prev-class (:current-class resolver)
-        name (:text (:name-token node))
+        name (:lexeme (:name-token node))
         superclass (:superclass node)
-        superclass-name (:text (:name-token superclass))]
+        superclass-name (:lexeme (:name-token superclass))]
     (if (and superclass (= name superclass-name))
       (error resolver
              (:name-token superclass)
@@ -122,7 +122,7 @@
           (add-var (:name-token node) true)
           (cond-> superclass (resolve-superclass superclass))
           (begin-scope)
-          (add-var {:text "this"} true) ;; TODO: hacky!
+          (add-var {:lexeme "this"} true) ;; TODO: hacky!
           (assoc :current-class (if (:superclass node) :subclass :class))
           (resolve-methods (:methods node))
           (assoc :current-class prev-class)

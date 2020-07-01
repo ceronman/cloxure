@@ -20,7 +20,7 @@
           line (:line token)
           location (case (:type token)
                      :eof "end"
-                     (format "'%s'" (:text token)))]
+                     (format "'%s'" (:lexeme token)))]
       (format "[line %d] Error at %s: %s" line location (:message error)))
 
     :scanner

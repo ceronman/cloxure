@@ -41,7 +41,7 @@
     (get @env name)))
 
 (defn- env-get [env name-token]
-  (let [name (:text name-token)]
+  (let [name (:lexeme name-token)]
    (if (contains? @env name)
      (get @env name)
      (runtime-error name-token (format "Undefined variable '%s'." name)))))
@@ -51,19 +51,19 @@
   env)
 
 (defn- env-assign! [env name-token value]
-  (let [name (:text name-token)]
+  (let [name (:lexeme name-token)]
     (if (contains? @env name)
      (swap! env assoc name value)
      (runtime-error name-token (format "Undefined variable '%s'." name)))))
 
 (defn- declare-variable [state name-token value]
   (let [env (:environment state)]
-    (env-declare! env (:text name-token) value)
+    (env-declare! env (:lexeme name-token) value)
     state))
 
 (defn- lookup-variable [state name-token expr]
   (if-let [distance (get-in state [:locals expr])]
-    (assoc state :result (env-get-at (:environment state) distance (:text name-token)))
+    (assoc state :result (env-get-at (:environment state) distance (:lexeme name-token)))
     (assoc state :result (env-get (:globals state) name-token))))
 
 (defn- assign-variable [state name-token expr value]
@@ -225,7 +225,7 @@
 (defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
   (arity [this] (-> this :declaration :params count))
-  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name :text])))
+  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name :lexeme])))
   (call [this state args]
         (let [declaration (:declaration this)
               env (:environment state)
@@ -258,7 +258,7 @@
 
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
-        name (:text name-token)]
+        name (:lexeme name-token)]
     (if (contains? @fields name)
       (get @fields name)
       (if-let [method (find-method (:lox-class object) name)]
@@ -281,7 +281,7 @@
       (assoc state :result instance))))
 
 (defn- instance-set! [object name-token value]
-  (swap! (:fields object) assoc (:text name-token) value))
+  (swap! (:fields object) assoc (:lexeme name-token) value))
 
 (defmethod evaluate :this-expr [state this-expr]
   (lookup-variable state (:keyword this-expr) this-expr))
@@ -310,7 +310,7 @@
         env (:environment state)
         lox-class (env-get-at env distance "super")
         object (env-get-at env (dec distance) "this")
-        method-name (:text (:method super-expr))
+        method-name (:lexeme (:method super-expr))
         method (find-method lox-class method-name)]
     (if method
       (assoc state :result (lox-fn-bind method object))
@@ -378,10 +378,10 @@
               env)
         methods (->> (:methods class-stmt)
                      (map (fn [fun-stmt]
-                            (let [name (:text (:name fun-stmt))]
+                            (let [name (:lexeme (:name fun-stmt))]
                               [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
-        lox-class (->LoxClass (:text name-token) superclass methods)]
+        lox-class (->LoxClass (:lexeme name-token) superclass methods)]
     (declare-variable state name-token lox-class)))
 
 

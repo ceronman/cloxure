@@ -43,7 +43,7 @@
    (token type text nil 1))
   ([type text literal line]
    {:type type
-    :text text
+    :lexeme text
     :literal literal
     :line line}))
 
