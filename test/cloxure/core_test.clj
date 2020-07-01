@@ -1,15 +1,13 @@
 (ns cloxure.core-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.test :refer [is testing]]
             [cloxure.core :refer [run-file]]
             [clojure.java.io :as io]
             [clojure.string :as str]))
-
 
 (def output-re #"// expect: ?(.*)")
 (def error-re #"// (Error.*)")
 (def error-line-re #"// \[(?:java )?line (\d+)\] (Error.*)")
 (def runtime-error-re #"// expect runtime error: (.+)")
-
 
 (defn- add-pattern [expected [n line]]
   (if-let [matched (re-find output-re line)]
@@ -32,9 +30,11 @@
        (map-indexed vector)
        (reduce add-pattern {:err [] :out []})))
 
-(defn- check-output [expected result]
-  (doseq [[line-expected line] (map vector expected result)]
-    (is (= line-expected line) "Output mismatch")))
+(defn- stream->lines [stream]
+  (let [as-str (.toString stream)]
+    (if (str/blank? as-str) 
+      []
+      (str/split-lines as-str))))
 
 (defn- run-test-file [file]
   (let [expected (parse-comments file)
@@ -43,14 +43,11 @@
     (binding [*out* out-writer
               *err* err-writer]
       (run-file file))
-    (let [out (str/split-lines (.toString out-writer))
-          err (str/split-lines (.toString err-writer))]
+    (let [out (stream->lines out-writer)
+          err (stream->lines err-writer)]
       (testing (.getPath file)
-        (check-output (:out expected) out)
-        (check-output (:err expected) err)))))
-
-;; (def test-file
-;;   (run-test-file (io/file "test/resources/if/class_in_then.lox")))
+        (is (= (:out expected) out) "stdout mismatch")
+        (is (= (:err expected) err) "stderr mismatch")))))
 
 (defn add-test
   "dynamically generated deftests."
