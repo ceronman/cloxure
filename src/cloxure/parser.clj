@@ -282,14 +282,14 @@
 (defn- function [after-fun kind]
   (let [after-name (consume after-fun :identifier
                             (str "Expect " kind " name."))
-        name (current-token after-fun)
+        name-token (current-token after-fun)
         after-lparen (consume after-name :lparen
                               (str "Expect '(' after " kind " name."))
         [after-rparen params] (parameters after-lparen)
         after-lbrace (consume after-rparen :lbrace (str "Expect '{' before " kind " body."))
         after-block (block after-lbrace)
         body (:statements (:expr after-block))]
-    (add-expr after-block (ast/fun-stmt name params body))))
+    (add-expr after-block (ast/fun-stmt name-token params body))))
 
 (defn- class-declaration [after-class]
   (let [after-name (consume after-class :identifier "Expect class name.")
