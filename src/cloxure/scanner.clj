@@ -1,23 +1,22 @@
-(ns cloxure.scanner
-  (:require [clojure.string :as string]))
+(ns cloxure.scanner)
 
-(def keywords 
-  #{"and"
-    "class"
-    "else"
-    "false"
-    "for"
-    "fun"
-    "if"
-    "nil"
-    "or"
-    "print"
-    "return"
-    "super"
-    "this"
-    "true"
-    "var"
-    "while"})
+(def keywords ^:private
+  #{:and
+    :class
+    :else
+    :false
+    :for
+    :fun
+    :if
+    :nil
+    :or
+    :print
+    :return
+    :super
+    :this
+    :true
+    :var
+    :while})
 
 (defn- new-scanner [source]
   {:source source
@@ -27,7 +26,7 @@
    :line 1
    :tokens []})
 
-(defn- is-at-end? [scanner]
+(defn- at-end? [scanner]
   (>= (:current scanner) (count (:source scanner))))
 
 (defn- current-char [scanner]
@@ -57,13 +56,13 @@
                                        literal
                                        (:line scanner)))))
 
-(defn- error [scanner message]
+(defn- add-error [scanner message]
   (update scanner :errors conj {:type :scanner
                                 :line (:line scanner) 
                                 :message message}))
 
 (defn- match [scanner expected]
-  (and (not (is-at-end? scanner)) (= (current-char scanner) expected)))
+  (and (not (at-end? scanner)) (= (current-char scanner) expected)))
 
 (defn- peek-next [scanner]
   (let [next (inc (:current scanner))
@@ -71,10 +70,10 @@
     (when (< next (count source))
       (nth source next))))
 
-(defn- is-digit? [char]
-  (and char
-       (>= (int char) (int \0))
-       (<= (int char) (int \9))))
+(defn- is-digit? [character]
+  (and character
+       (>= (int character) (int \0))
+       (<= (int character) (int \9))))
 
 (defn- is-alpha? [char]
   (when char
@@ -87,34 +86,37 @@
   (or (is-digit? char) (is-alpha? char)))
 
 (defn- skip-comment [scanner]
-  (if (or (is-at-end? scanner) (= (current-char scanner) \newline))
+  (if (or (at-end? scanner) (= (current-char scanner) \newline))
     scanner
     (recur (advance scanner))))
 
 (defn- add-string [scanner]
-  (cond 
-    (is-at-end? scanner) (error scanner "Unterminated string.")
-    (= (current-char scanner) \") (let [advanced (advance scanner)]
-                                    (add-token advanced :string (subs (:source advanced)
-                                                                     (inc (:start advanced))
-                                                                     (dec (:current advanced)))))
-    :else (recur 
-           (advance (if (= (current-char scanner) \newline)
-                      (update scanner :line inc)
-                      scanner)))))
+  (cond
+    (at-end? scanner) (add-error scanner "Unterminated string.")
+
+    (= (current-char scanner) \")  (let [advanced (advance scanner)]
+                                     (add-token advanced
+                                                :string
+                                                (subs (:source advanced)
+                                                      (inc (:start advanced))
+                                                      (dec (:current advanced)))))
+    
+    :else (recur (advance (if (= (current-char scanner) \newline)
+                            (update scanner :line inc)
+                            scanner)))))
 
 (defn- add-number [scanner]
-  (if (or (is-at-end? scanner) (not (is-digit? (current-char scanner))))
+  (if (or (at-end? scanner) (not (is-digit? (current-char scanner))))
     (if (and (match scanner \.) (is-digit? (peek-next scanner)))
       (recur (advance scanner))
       (add-token scanner :number (Double/parseDouble (current-text scanner))))
     (recur (advance scanner))))
 
 (defn- add-identifier [scanner]
-  (if (or (is-at-end? scanner) (not (is-alphanumeric (current-char scanner))))
+  (if (or (at-end? scanner) (not (is-alphanumeric (current-char scanner))))
     (let [text (current-text scanner)]
-      (if-let [kw (keywords text)]
-        (add-token scanner (keyword kw))
+      (if-let [kw (keywords (keyword text))]
+        (add-token scanner kw)
         (add-token scanner :identifier)))
     (recur (advance scanner))))
 
@@ -154,52 +156,15 @@
       (cond 
         (is-digit? char) (add-number scanner)
         (is-alpha? char) (add-identifier scanner)
-        :else (error scanner (str "Unexpected character."))))))
+        :else (add-error scanner (str "Unexpected character."))))))
 
 (defn- next-token [scanner]
   (assoc scanner :start (:current scanner)))
 
 (defn scan [source]
   (loop [scanner (new-scanner source)]
-    (if (is-at-end? scanner)
+    (if (at-end? scanner)
       (add-token scanner :eof)
       (recur (-> scanner
                  (scan-token)
                  (next-token))))))
-
-(defn scanner->str [scanner]
-  (let [errors (:errors scanner)]
-    (if (seq errors)
-      (string/join "\n" (map #(format "ERROR Line %s: %s" (:line %) (:message %)) errors))
-      (map #(str (:type %)
-                 (cond
-                   (:literal %) (str "=" (:literal %))
-                   (= (:type %) :identifier) (str "=" (:text %))
-                   :else "")) (:tokens scanner)))))
-
-(defn- scanner-test [source]
-  (println (scanner->str (scan source))))
-
-(comment (scanner-test "a"))
-(comment (scanner-test "()"))
-(comment (scanner-test "()&%"))
-(comment (scanner-test "()!+="))
-(comment (scanner-test "()!="))
-(comment (scanner-test "()!=//This is a comment"))
-(comment (scanner-test "()!=//This is a comment[]()"))
-(comment (scanner-test "//This is a comment\n{}()"))
-(comment (scanner-test "//This is a comment"))
-(comment (scanner-test "+  -  (  )"))
-(comment (scanner-test "\n//comment\n\n&"))
-(comment (scanner-test "\"hello\" + \"world\""))
-(comment (scanner-test "123 + 125.12"))
-(comment (scanner-test "123 + 125.11. .5"))
-(comment (scanner-test "hello.world()"))
-(comment (scanner-test "hello.world"))
-(comment (scanner-test "\"hello.world\""))
-(comment (scanner-test "a + b + 4"))
-(comment (scanner-test "a or b + c"))
-(comment (scanner-test "if (a + b) { x = true }"))
-(comment (scanner-test "\"t\""))
-(comment (scanner-test "\"Unterminated string"))
-(comment (scanner-test "\""))
