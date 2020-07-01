@@ -62,9 +62,9 @@
 (defmethod pretty-print :set-expr [{obj :object n :name-token v :value}]
   (format "(set %s %s %s)" (pretty-print obj) (:lexeme n) (pretty-print v)))
 
-(defmethod pretty-print :fun-stmt [{name :name params :params body :body}]
+(defmethod pretty-print :fun-stmt [{name-token :name-token params :params body :body}]
   (format "(fun %s [%s] %s)"
-          (:lexeme name)
+          (:lexeme name-token)
           (str/join ", " (map :lexeme params))
           (str/join " " (map pretty-print body))))
 

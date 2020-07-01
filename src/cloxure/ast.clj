@@ -48,9 +48,8 @@
 (defn while-stmt [condition body]
   {:type :while-stmt :condition condition :body body})
 
-;; TODO: name -> name-token
-(defn fun-stmt [name params body]
-  {:type :fun-stmt :name name :params params :body body})
+(defn fun-stmt [name-token params body]
+  {:type :fun-stmt :name-token name-token :params params :body body})
 
 (defn class-stmt [name-token superclass methods]
   {:type :class-stmt :name-token name-token :superclass superclass :methods methods})

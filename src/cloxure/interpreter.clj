@@ -225,7 +225,7 @@
 (defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
   (arity [this] (-> this :declaration :params count))
-  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name :lexeme])))
+  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name-token :lexeme])))
   (call [this state args]
         (let [declaration (:declaration this)
               env (:environment state)
@@ -351,7 +351,7 @@
 
 (defmethod evaluate :fun-stmt [state fun-stmt]
   (let [f (->LoxFunction fun-stmt (:environment state) false)]
-    (declare-variable state (:name fun-stmt) f)))
+    (declare-variable state (:name-token fun-stmt) f)))
 
 (defmethod evaluate :return-stmt [state return-stmt]
   (let [value (:value return-stmt)
@@ -378,7 +378,7 @@
               env)
         methods (->> (:methods class-stmt)
                      (map (fn [fun-stmt]
-                            (let [name (:lexeme (:name fun-stmt))]
+                            (let [name (:lexeme (:name-token fun-stmt))]
                               [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
         lox-class (->LoxClass (:lexeme name-token) superclass methods)]

@@ -91,13 +91,13 @@
 
 (defmethod resolve-locals :fun-stmt [resolver node]
   (-> resolver
-      (add-var (:name node) true)
+      (add-var (:name-token node) true)
       (resolve-function node :function)))
 
 (defn- resolve-methods [resolver methods]
   (reduce
    (fn [resolver method]
-     (if (= (-> method :name :lexeme) "init")
+     (if (= (-> method :name-token :lexeme) "init")
        (resolve-function resolver method :initializer)
        (resolve-function resolver method :method)))
    resolver
