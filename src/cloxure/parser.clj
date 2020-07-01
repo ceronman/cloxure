@@ -1,6 +1,5 @@
 (ns cloxure.parser
-  (:require [cloxure.ast :as ast])
-  (:require [cloxure.scanner :as scanner]))
+  (:require [cloxure.ast :as ast]))
 
 ;; Grammar
 ;; -----------------------------------------------------------------
@@ -50,7 +49,7 @@
 ;;------------------------------------------------------------------
 
 (defn- new-parser [tokens]
-  {:tokens tokens 
+  {:tokens tokens
    :errors []
    :statements []
    :current 0
@@ -73,7 +72,7 @@
 
 (defn- add-error [parser message]
   (update parser :errors conj {:type :parser
-                               :token (current-token parser) 
+                               :token (current-token parser)
                                :message message}))
 
 (defn- error [parser message]
@@ -88,7 +87,7 @@
 (defn- synchronize [parser]
   (cond (is-at-end? parser) parser
         (match? parser :semicolon) (advance parser)
-        (match? parser 
+        (match? parser
                 :class :fun :var :for :if :while :print :return) parser
         :else (recur (advance parser))))
 
@@ -109,18 +108,18 @@
     (add-expr after-idt (ast/super (current-token parser) (current-token after-dot)))))
 
 (defn- primary [parser]
-  (cond 
+  (cond
     (match? parser :false) (add-literal parser false)
     (match? parser :true) (add-literal parser true)
     (match? parser :nil) (add-literal parser nil)
     (match? parser :number :string) (add-literal parser (:literal (current-token parser)))
     (match? parser :super) (add-super parser)
     (match? parser :this) (add-expr (advance parser) (ast/this-expr (current-token parser)))
-    
+
     ;; TODO: Weird advance pos
     (match? parser :identifier) (advance (add-expr parser (ast/variable (current-token parser))))
     (match? parser :lparen) (let [middle (expression (advance parser))]
-                              (add-expr (consume middle :rparen "Expect ')' after expression.") 
+                              (add-expr (consume middle :rparen "Expect ')' after expression.")
                                         (ast/group (:expr middle))))
     :else (error parser "Expect expression.")))
 
@@ -141,16 +140,16 @@
 
 (defn- call [parser]
   (loop [parser (primary parser)]
-    (cond 
+    (cond
       (match? parser :lparen)
       (recur (finish-call (advance parser) (:expr parser)))
-      
+
       (match? parser :dot)
       (let [after-dot (advance parser)
-            after-identifier (consume after-dot :identifier 
+            after-identifier (consume after-dot :identifier
                                       "Expect property name after '.'.")]
-        (recur (add-expr after-identifier 
-                   (ast/get-expr (:expr after-identifier) (current-token after-dot)))))
+        (recur (add-expr after-identifier
+                         (ast/get-expr (:expr after-identifier) (current-token after-dot)))))
       :else
       parser)))
 
@@ -173,7 +172,7 @@
   (binary* parser unary :slash :star))
 
 (defn- addition [parser]
- (binary* parser multiplication :minus :plus))
+  (binary* parser multiplication :minus :plus))
 
 (defn- comparison [parser]
   (binary* parser addition :greater :greater_equal :less :less_equal))
@@ -201,13 +200,13 @@
     (if (match? left :equal)
       (let [after-equals (advance left)
             after-value (assignment after-equals)]
-        (case (:type left-expr) 
-          :variable (add-expr after-value (ast/assign (:name-token left-expr) 
+        (case (:type left-expr)
+          :variable (add-expr after-value (ast/assign (:name-token left-expr)
                                                       (:expr after-value)))
           :get-expr (add-expr after-value (ast/set-expr (:object left-expr)
                                                         (:name-token left-expr)
                                                         (:expr after-value)))
-          
+
           (error left "Invalid assignment target.")))
       left)))
 
@@ -250,7 +249,7 @@
 
 (defn- statement [parser]
   ; TODO use condp?
-  (cond 
+  (cond
     (match? parser :for) (for-stmt (advance parser))
     (match? parser :if) (if-stmt (advance parser))
     (match? parser :print) (print-stmt (advance parser))
@@ -310,21 +309,21 @@
           (recur after-method (conj methods (:expr after-method))))))))
 
 (defn- declaration [parser]
-  (cond 
+  (cond
     (match? parser :class) (class-declaration (advance parser))
     (match? parser :fun) (function (advance parser) "function")
     (match? parser :var) (var-declaration (advance parser))
     :else (statement parser)))
 
 (defn- if-stmt [parser]
-  (let [after-lparen (consume parser :lparen 
+  (let [after-lparen (consume parser :lparen
                               "Expect '(' after 'if'.")
         condition (expression after-lparen)
-        after-rparen (consume condition :rparen 
+        after-rparen (consume condition :rparen
                               "Expect ')' after if condition.")
         after-then (statement after-rparen)
         after-else (when (check? after-then :else)
-                      (statement (advance after-then)))]
+                     (statement (advance after-then)))]
     (add-expr (or after-else after-then)
               (ast/if-stmt (:expr condition)
                            (:expr after-then)
@@ -335,8 +334,8 @@
         condition (expression after-lparen)
         after-rparen (consume condition :rparen "Expect ')' after condition.")
         after-body (statement after-rparen)]
-    (add-expr after-body 
-              (ast/while-stmt (:expr condition) 
+    (add-expr after-body
+              (ast/while-stmt (:expr condition)
                               (:expr after-body)))))
 
 (defn- for-stmt [parser]
@@ -375,120 +374,3 @@
                (assoc :expr nil)))
          (catch clojure.lang.ExceptionInfo e
            (synchronize (ex-data e))))))))
-
-(defn- test-parser [code]
-  (let [{errors :errors tokens :tokens} (scanner/scan code)]
-    (if (seq errors)
-      errors
-      (let [{errors :errors statements :statements} (parse tokens)]
-        (if (seq errors)
-          errors
-          (doseq [s statements]
-            (prn s)
-            (println (ast/pretty-print s))))))))
-
-(comment (test-parser "\""))
-(comment (test-parser "1;"))
-(comment (test-parser "var a = 1; a = 2;"))
-(comment (test-parser "var a = 1; a+b = 1;"))
-(comment (test-parser "var a = 1; print a;"))
-(comment (test-parser "1;2;3;\"hello\";"))
-(comment (test-parser "1+2;"))
-(comment (test-parser "1 == 1;"))
-(comment (test-parser "1 + 2 * 3 + 4;"))
-(comment (test-parser "true != false;"))
-(comment (test-parser "(1 + 2) * 3;"))
-(comment (test-parser "var hello;"))
-(comment (test-parser "var hello = 1;"))
-(comment (test-parser "var hello = 1 + 2;"))
-(comment (test-parser "1++;2++;"))
-(comment (test-parser "print 1; print 2;"))
-(comment (test-parser "1+2;"))
-(comment (test-parser "(100 + 200 + 1"))
-(comment (test-parser "1)"))
-(comment (test-parser "(1 + nil)"))
-(comment (test-parser "\"hello\" == \"world\""))
-(comment (test-parser "{}"))
-(comment (test-parser "{1; 2; 3;}"))
-(comment (test-parser "{print 1+2;}"))
-(comment (test-parser "if (true) print 1; else print 2;"))
-(comment (test-parser "if (true) print 1;"))
-(comment (test-parser "if (true) {print 1; print 2;}"))
-(comment (test-parser "if (true) {print 1; print 2;} else { print 3; }"))
-(comment (test-parser "if (true print 1;"))
-(comment (test-parser "if (print 1;)"))
-(comment (test-parser "else"))
-(comment (test-parser "if (true) if (false) print 1; else print 2;"))
-(comment (test-parser "a == 1 or b == 2 and b > 3;"))
-(comment (test-parser "while (true) print 1;"))
-(comment (test-parser "while (true) { print 1; print 2; }"))
-(comment (test-parser "while 1 == 2 { print 1; print 2; }"))
-(comment (test-parser "for (;;) print 1;"))
-(comment (test-parser "for (i = 0; i < 10; i = i + 1) print i;"))
-(comment (test-parser "for (var i = 0; i < 10; i = i + 1) print i;"))
-(comment (test-parser "var i = 0; for (; i < 10; ) print i;"))
-(comment (test-parser "hello;"))
-(comment (test-parser "hello();"))
-(comment (test-parser "hello(1);"))
-(comment (test-parser "hello(1+2);"))
-(comment (test-parser "hello(1,2);"))
-(comment (test-parser "hello(1,2, true);"))
-(comment (test-parser "curry(1)(2)(3);"))
-(comment (test-parser "curry(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
-                             21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
-                             41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,
-                             61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,
-                             81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,
-                             101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,
-                             116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,
-                             131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,
-                             146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,
-                             161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,
-                             177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,
-                             193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,
-                             209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,
-                             225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,
-                             241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256);"))
-
-(comment (test-parser "fun hello() { print 1; }"))
-(comment (test-parser "fun hello(one, two, three) { print 1; }"))
-(comment (test-parser "fun()"))
-(comment (test-parser "fun hello() {}"))
-(comment (test-parser "fun hello() { return; }"))
-(comment (test-parser "fun hello() { return 1; }"))
-
-(comment (test-parser "class"))
-(comment (test-parser "class Blah"))
-(comment (test-parser "class Blah {"))
-(comment (test-parser "class Emptry {}"))
-
-(comment (test-parser "
-class Breakfast {
-  cook() {
-    print 1;
-  }
-}
-"))
-
-
-(comment (test-parser "
-class Breakfast {
-  cook() {
-    print \"Eggs a-fryin'!\";
-  }
-
-  serve(who) {
-    print \"Enjoy your breakfast, \" + who + \".\";
-  }
-}
-"))
-
-(comment (test-parser "foo.bar;"))
-(comment (test-parser "egg.scramble(3).with(\"cheddar\");"))
-(comment (test-parser "someObject.someProperty = value;"))
-(comment (test-parser "egg.scramble(3).with(\"cheddar\").prop = true;"))
-(comment (test-parser "this.something();"))
-
-(comment (test-parser "class Bar < Foo {}"))
-(comment (test-parser "super.cook();"))
-(comment (test-parser "print super;"))
