@@ -99,7 +99,7 @@
                                                                      (inc (:start advanced))
                                                                      (dec (:current advanced)))))
     :else (recur 
-           (advance (if (= char \newline)
+           (advance (if (= (current-char scanner) \newline)
                       (update scanner :line inc)
                       scanner)))))
 
