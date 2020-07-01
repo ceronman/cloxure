@@ -309,7 +309,6 @@
   (let [distance (get-in state [:locals super-expr])
         env (:environment state)
         lox-class (env-get-at env distance "super")
-        env (env-ancestor (:environment state) (dec distance))
         object (env-get-at env (dec distance) "this")
         method-name (:text (:method super-expr))
         method (find-method lox-class method-name)]
@@ -852,9 +851,17 @@ print Foo().a;
 
 (comment
   (test-interpreter "
-fun foo(arg,
-        arg) { // Error at 'arg': Variable with this name already declared in this scope.
-  \"body\";
+class Base {
+  init(a) {
+    this.a = a;
+  }
 }
 
+class Derived < Base {
+  init(a) {
+    super.init(a);
+  }
+}
+
+var derived = Derived(\"a\");
 "))
