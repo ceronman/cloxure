@@ -14,10 +14,10 @@
     (call [this state _]
       (assoc state :result (/ (System/currentTimeMillis) 1000.0)))
     (arity [this] 0)
-    (to-string [this] "<native-fn>")))
+    (to-string [this] "<native fn>")))
 
 (def builtins
-  {"time" time-builtin})
+  {"clock" time-builtin})
 
 (defn new-interpreter-state []
   (let [globals (atom (assoc builtins :enclosing nil))]
