@@ -130,7 +130,7 @@
       (add-expr (advance parser) (ast/call callee (current-token parser) arguments))
       (let [after-arg (expression parser)
             after-arg (if (>= (count arguments) 255)
-                        (add-error parser "Cannot have more than 255 arguments.")
+                        (advance (add-error parser "Cannot have more than 255 arguments."))
                         after-arg)
             arguments (conj arguments (:expr after-arg))]
         (if (match? after-arg :comma)
@@ -272,7 +272,7 @@
            params []]
       (let [after-param (consume parser :identifier "Expect parameter name.")
             after-param (if (>= (count params) 255)
-                          (add-error parser "Cannot have more than 255 parameters.")
+                          (advance (add-error parser "Cannot have more than 255 parameters."))
                           after-param)
             params (conj params (current-token parser))]
         (if (match? after-param :comma)
