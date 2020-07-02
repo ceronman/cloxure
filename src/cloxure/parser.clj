@@ -309,11 +309,16 @@
           (recur after-method (conj methods (:expr after-method))))))))
 
 (defn- declaration [parser]
-  (cond
-    (match? parser :class) (class-declaration (advance parser))
-    (match? parser :fun) (function (advance parser) "function")
-    (match? parser :var) (var-declaration (advance parser))
-    :else (statement parser)))
+  (try 
+    (cond
+      (match? parser :class) (class-declaration (advance parser))
+      (match? parser :fun) (function (advance parser) "function")
+      (match? parser :var) (var-declaration (advance parser))
+      :else (statement parser))
+    (catch clojure.lang.ExceptionInfo e
+      (-> (ex-data e)
+          (synchronize)
+          (assoc :expr nil)))))
 
 (defn- if-stmt [parser]
   (let [after-lparen (consume parser :lparen
@@ -367,10 +372,7 @@
     (if (is-at-end? parser)
       parser
       (recur
-       (try
-         (let [after-statement (declaration parser)]
-           (-> after-statement
-               (update :statements conj (:expr after-statement))
-               (assoc :expr nil)))
-         (catch clojure.lang.ExceptionInfo e
-           (synchronize (ex-data e))))))))
+       (let [after-statement (declaration parser)]
+         (-> after-statement
+             (update :statements conj (:expr after-statement))
+             (assoc :expr nil)))))))
