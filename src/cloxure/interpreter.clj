@@ -1,8 +1,8 @@
 (ns cloxure.interpreter)
 
 ; TODO: this is for debugging purposes, remove later.
-(set! *print-level* 5)
-(set! *warn-on-reflection* true)
+(set! clojure.core/*print-level* 5)
+(set! clojure.core/*warn-on-reflection* true)
 
 (defprotocol LoxCallable
   "Represent a callable object in Lox"
