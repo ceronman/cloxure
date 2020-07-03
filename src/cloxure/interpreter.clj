@@ -1,5 +1,6 @@
 (ns cloxure.interpreter
-  (:require [cloxure.token :as token]))
+  (:require [cloxure.token :as token]
+            [cloxure.ast :as ast]))
 
 ; TODO: this is for debugging purposes, remove later.
 (set! clojure.core/*print-level* 5)
@@ -100,29 +101,29 @@
 
 (defmulti evaluate
   "Interprets a Lox AST"
-  (fn [_ node] (:type node)))
+  (fn [_ node] (::ast/type node)))
 
-(defmethod evaluate :literal [state literal-expr]
-  (assoc state :result (:value literal-expr)))
+(defmethod evaluate ::ast/literal [state literal-expr]
+  (assoc state :result (::ast/value literal-expr)))
 
-(defmethod evaluate :group [state group-expr]
-  (evaluate state (:expression group-expr)))
+(defmethod evaluate ::ast/group [state group-expr]
+  (evaluate state (::ast/expression group-expr)))
 
-(defmethod evaluate :unary [state unary-expr]
-  (let [state (evaluate state (:right unary-expr))
+(defmethod evaluate ::ast/unary [state unary-expr]
+  (let [state (evaluate state (::ast/right unary-expr))
         right (:result state)
-        operator (::token/type (:operator unary-expr))]
+        operator (::token/type (::ast/operator unary-expr))]
     (assoc state :result (case operator
-                           ::token/minus (numeric-operation (:operator unary-expr) - right)
+                           ::token/minus (numeric-operation (::ast/operator unary-expr) - right)
                            ::token/bang (not (truthy? right))))))
 
-(defmethod evaluate :binary [state binary-expr]
-  (let [state (evaluate state (:left binary-expr))
+(defmethod evaluate ::ast/binary [state binary-expr]
+  (let [state (evaluate state (::ast/left binary-expr))
         left (:result state)
-        state (evaluate state (:right binary-expr))
+        state (evaluate state (::ast/right binary-expr))
         right (:result state)
-        op-token (:operator binary-expr)
-        operator (::token/type (:operator binary-expr))]
+        op-token (::ast/operator binary-expr)
+        operator (::token/type (::ast/operator binary-expr))]
     (assoc state :result
            (case operator
              ::token/bang_equal (not= left right)
@@ -143,40 +144,40 @@
              ::token/slash (numeric-operation op-token / left right)
              ::token/star (numeric-operation op-token * left right)))))
 
-(defmethod evaluate :logical [state logical-expr]
-  (let [state (evaluate state (:left logical-expr))
+(defmethod evaluate ::ast/logical [state logical-expr]
+  (let [state (evaluate state (::ast/left logical-expr))
         left (:result state)
-        operator (::token/type (:operator logical-expr))
+        operator (::token/type (::ast/operator logical-expr))
         left-truthy? (truthy? left)]
     (cond
       (and (= operator ::token/or) left-truthy?) state
       (and (= operator ::token/and) (not left-truthy?)) state
-      :else (evaluate state (:right logical-expr)))))
+      :else (evaluate state (::ast/right logical-expr)))))
 
-(defmethod evaluate :var-stmt [state var-stmt]
-  (let [initializer (:initializer var-stmt)
+(defmethod evaluate ::ast/var-stmt [state var-stmt]
+  (let [initializer (::ast/initializer var-stmt)
         state (if initializer
                 (evaluate state initializer)
                 (assoc state :result nil))]
     (-> state
-        (declare-variable (:name-token var-stmt) (:result state))
+        (declare-variable (::ast/name-token var-stmt) (:result state))
         (assoc :result nil))))
 
-(defmethod evaluate :variable [state var-expr]
-  (lookup-variable state (:name-token var-expr) var-expr))
+(defmethod evaluate ::ast/variable [state var-expr]
+  (lookup-variable state (::ast/name-token var-expr) var-expr))
 
-(defmethod evaluate :assign [state assign-expr]
-  (let [state (evaluate state (:value-expr assign-expr))
+(defmethod evaluate ::ast/assign [state assign-expr]
+  (let [state (evaluate state (::ast/value-expr assign-expr))
         value (:result state)]
-    (assign-variable state (:name-token assign-expr) assign-expr value)))
+    (assign-variable state (::ast/name-token assign-expr) assign-expr value)))
 
 (defn- evaluate-statements [state statements]
   (reduce evaluate state statements))
 
-(defmethod evaluate :block [state block-stmt]
+(defmethod evaluate ::ast/block [state block-stmt]
   (-> state
       (update :environment push-scope)
-      (evaluate-statements (:statements block-stmt))
+      (evaluate-statements (::ast/statements block-stmt))
       (update :environment pop-scope)
       (assoc :result nil)))
 
@@ -189,17 +190,17 @@
    (assoc state :result [])
    args))
 
-(defmethod evaluate :call [state call-expr]
-  (let [state (evaluate state (:callee call-expr))
+(defmethod evaluate ::ast/call [state call-expr]
+  (let [state (evaluate state (::ast/callee call-expr))
         callee (:result state)
-        state (evaluate-args state (:arguments call-expr))
+        state (evaluate-args state (::ast/arguments call-expr))
         arguments (:result state)]
     (cond
       (not (satisfies? LoxCallable callee))
-      (runtime-error (:paren call-expr) "Can only call functions and classes.")
+      (runtime-error (::ast/paren call-expr) "Can only call functions and classes.")
 
       (not= (arity callee) (count arguments))
-      (runtime-error (:paren call-expr)
+      (runtime-error (::ast/paren call-expr)
                      (format "Expected %d arguments but got %d."
                              (arity callee)
                              (count arguments)))
@@ -226,16 +227,16 @@
 
 (defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
-  (arity [this] (-> this :declaration :params count))
-  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name-token ::token/lexeme])))
+  (arity [this] (-> this :declaration ::ast/params count))
+  (to-string [this] (format "<fn %s>" (get-in this [:declaration ::ast/name-token ::token/lexeme])))
   (call [this state args]
         (let [declaration (:declaration this)
               env (:environment state)
               closure (:closure this)]
           (-> state
               (assoc :environment (push-scope closure))
-              (declare-fn-args (:params declaration) args)
-              (execute-fn-body (:body declaration) closure (:initializer? this))
+              (declare-fn-args (::ast/params declaration) args)
+              (execute-fn-body (::ast/body declaration) closure (:initializer? this))
               (assoc :environment env)))))
 
 (defn lox-fn-bind [lox-fn instance]
@@ -285,38 +286,38 @@
 (defn- instance-set! [object name-token value]
   (swap! (:fields object) assoc (::token/lexeme name-token) value))
 
-(defmethod evaluate :this-expr [state this-expr]
-  (lookup-variable state (:keyword this-expr) this-expr))
+(defmethod evaluate ::ast/this-expr [state this-expr]
+  (lookup-variable state (::ast/keyword this-expr) this-expr))
 
-(defmethod evaluate :get-expr [state get-expr]
-  (let [name-token (:name-token get-expr)
-        state (evaluate state (:object get-expr))
+(defmethod evaluate ::ast/get-expr [state get-expr]
+  (let [name-token (::ast/name-token get-expr)
+        state (evaluate state (::ast/object get-expr))
         object (:result state)]
     (if (instance? LoxInstance object)
       (assoc state :result (instance-get object name-token))
       (runtime-error name-token "Only instances have properties."))))
 
-(defmethod evaluate :set-expr [state set-expr]
-  (let [name-token (:name-token set-expr)
-        state (evaluate state (:object set-expr))
+(defmethod evaluate ::ast/set-expr [state set-expr]
+  (let [name-token (::ast/name-token set-expr)
+        state (evaluate state (::ast/object set-expr))
         object (:result state)]
     (if (instance? LoxInstance object)
-      (let [state (evaluate state (:value set-expr))
+      (let [state (evaluate state (::ast/value set-expr))
             value (:result state)]
         (instance-set! object name-token value)
         (assoc state :result value))
       (runtime-error name-token "Only instances have fields."))))
 
-(defmethod evaluate :super [state super-expr]
+(defmethod evaluate ::ast/super [state super-expr]
   (let [distance (get-in state [:locals super-expr])
         env (:environment state)
         lox-class (env-get-at env distance "super")
         object (env-get-at env (dec distance) "this")
-        method-name (::token/lexeme (:method super-expr))
+        method-name (::token/lexeme (::ast/method super-expr))
         method (find-method lox-class method-name)]
     (if method
       (assoc state :result (lox-fn-bind method object))
-      (runtime-error (:method super-expr) 
+      (runtime-error (::ast/method super-expr) 
                      (str "Undefined property '" method-name "'.")))))
 
 ;; TODO: Polymorphism please!!!
@@ -333,54 +334,54 @@
     (satisfies? LoxCallable value) (to-string value)
     :else "<???>"))
 
-(defmethod evaluate :print-stmt [state print-stmt]
-  (let [state (evaluate state (:expression print-stmt))]
+(defmethod evaluate ::ast/print-stmt [state print-stmt]
+  (let [state (evaluate state (::ast/expression print-stmt))]
     (assoc state :result (println (stringify (:result state))))))
 
-(defmethod evaluate :if-stmt [state if-stmt]
-  (let [state (evaluate state (:condition if-stmt))]
+(defmethod evaluate ::ast/if-stmt [state if-stmt]
+  (let [state (evaluate state (::ast/condition if-stmt))]
     (if (truthy? (:result state))
-      (evaluate state (:then-branch if-stmt))
-      (if-let [else-branch (:else-branch if-stmt)]
+      (evaluate state (::ast/then-branch if-stmt))
+      (if-let [else-branch (::ast/else-branch if-stmt)]
         (evaluate state else-branch)
         (assoc state :result nil)))))
 
-(defmethod evaluate :while-stmt [state while-stmt]
-  (let [state (evaluate state (:condition while-stmt))]
+(defmethod evaluate ::ast/while-stmt [state while-stmt]
+  (let [state (evaluate state (::ast/condition while-stmt))]
     (if (truthy? (:result state))
-      (recur (evaluate state (:body while-stmt)) while-stmt)
+      (recur (evaluate state (::ast/body while-stmt)) while-stmt)
       (assoc state :result nil))))
 
-(defmethod evaluate :fun-stmt [state fun-stmt]
+(defmethod evaluate ::ast/fun-stmt [state fun-stmt]
   (let [f (->LoxFunction fun-stmt (:environment state) false)]
-    (declare-variable state (:name-token fun-stmt) f)))
+    (declare-variable state (::ast/name-token fun-stmt) f)))
 
-(defmethod evaluate :return-stmt [state return-stmt]
-  (let [value (:value return-stmt)
+(defmethod evaluate ::ast/return-stmt [state return-stmt]
+  (let [value (::ast/value return-stmt)
         state (if value (evaluate state value) (assoc state :result nil))]
     (throw (ex-info "return" {:type :return
                               :state state}))))
 
 (defn- evaluate-superclass [state class-stmt]
-  (if-let [superclass (:superclass class-stmt)]
+  (if-let [superclass (::ast/superclass class-stmt)]
     (let [state (evaluate state superclass)
           value (:result state)]
       (if (instance? LoxClass value)
         state
-        (runtime-error (:name-token superclass) "Superclass must be a class.")))
+        (runtime-error (::ast/name-token superclass) "Superclass must be a class.")))
     (assoc state :result nil)))
 
-(defmethod evaluate :class-stmt [state class-stmt]
-  (let [name-token (:name-token class-stmt)
+(defmethod evaluate ::ast/class-stmt [state class-stmt]
+  (let [name-token (::ast/name-token class-stmt)
         state (evaluate-superclass state class-stmt)
         superclass (:result state)
         env (:environment state)
         env (if superclass 
               (env-declare! (push-scope env) "super" superclass) 
               env)
-        methods (->> (:methods class-stmt)
+        methods (->> (::ast/methods class-stmt)
                      (map (fn [fun-stmt]
-                            (let [name (::token/lexeme (:name-token fun-stmt))]
+                            (let [name (::token/lexeme (::ast/name-token fun-stmt))]
                               [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
         lox-class (->LoxClass (::token/lexeme name-token) superclass methods)]
@@ -551,7 +552,7 @@
 
 (comment
   (test-interpreter
-   "print time();"))
+   "print clock();"))
 
 (comment
   (test-interpreter

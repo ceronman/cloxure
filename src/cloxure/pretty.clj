@@ -1,6 +1,7 @@
 (ns cloxure.pretty
   (:require [clojure.string :as str]
-            [cloxure.token :as token]))
+            [cloxure.token :as token]
+            [cloxure.ast :as ast]))
 
 (defmulti pretty-print
   "Converts an AST to string using a lisp-like notatation"
@@ -9,73 +10,74 @@
 (defn- parenthesize [name & expressions]
   (str "(" name " " (str/join " " (map pretty-print expressions)) ")"))
 
-(defmethod pretty-print :binary [{op :operator l :left r :right}]
-  (parenthesize (::token/lexeme op) l r))
+(defmethod pretty-print ::ast/binary [{::ast/keys [operator left right]}]
+  (parenthesize (::token/lexeme operator) left right))
 
-(defmethod pretty-print :logical [{op :operator l :left r :right}]
-  (parenthesize (::token/lexeme op) l r))
+(defmethod pretty-print ::ast/logical [{::ast/keys [operator left right]}]
+  (parenthesize (::token/lexeme operator) left right))
 
-(defmethod pretty-print :unary [{op :operator r :right}]
-  (parenthesize (::token/lexeme op) r))
+(defmethod pretty-print ::ast/unary [{::ast/keys [operator right]}]
+  (parenthesize (::token/lexeme operator) right))
 
-(defmethod pretty-print :group [{e :expression}]
-  (parenthesize "group" e))
+(defmethod pretty-print ::ast/group [{::ast/keys [expression]}]
+  (parenthesize "group" expression))
 
-(defmethod pretty-print :literal [{value :value}]
+(defmethod pretty-print ::ast/literal [{::ast/keys [value]}]
   (if (nil? value) "nil" (str/trim (prn-str value))))
 
-(defmethod pretty-print :variable [{name-token :name-token}]
+(defmethod pretty-print ::ast/variable [{::ast/keys [name-token]}]
   (::token/lexeme name-token))
 
-(defmethod pretty-print :print-stmt [{e :expression}]
-  (parenthesize "print" e))
+(defmethod pretty-print ::ast/print-stmt [{::ast/keys [expression]}]
+  (parenthesize "print" expression))
 
-(defmethod pretty-print :var-stmt [{n :name-token i :initializer}]
-  (if (nil? i)
-    (format "(var %s)" (::token/lexeme n))
-    (format "(var %s = %s)" (::token/lexeme n) (pretty-print i))))
+(defmethod pretty-print ::ast/var-stmt [{::ast/keys [name-token initializer]}]
+  (if (nil? initializer)
+    (format "(var %s)" (::token/lexeme name-token))
+    (format "(var %s = %s)" (::token/lexeme name-token) (pretty-print initializer))))
 
-(defmethod pretty-print :assign [{n :name-token v :value-expr}]
-  (format "(%s = %s)" (::token/lexeme n) (pretty-print v)))
+(defmethod pretty-print ::ast/assign [{::ast/keys [name-token value-expr]}]
+  (format "(%s = %s)" (::token/lexeme name-token) (pretty-print value-expr)))
 
-(defmethod pretty-print :block [{s :statements}]
-  (apply parenthesize "block" s))
+(defmethod pretty-print ::ast/block [{::ast/keys [statements]}]
+  (apply parenthesize "block" statements))
 
-(defmethod pretty-print :return-stmt [{v :value}]
-  (format "(return %s)" (pretty-print v)))
+(defmethod pretty-print ::ast/return-stmt [{::ast/keys [value]}]
+  (format "(return %s)" (pretty-print value)))
 
-(defmethod pretty-print :if-stmt [{c :condition t :then-branch e :else-branch}]
-  (if (nil? e)
-    (parenthesize "if" c t)
-    (parenthesize "if" c t e)))
+(defmethod pretty-print ::ast/if-stmt [{::ast/keys [condition then-branch else-branch]}]
+  (if (nil? else-branch)
+    (parenthesize "if" condition then-branch)
+    (parenthesize "if" condition then-branch else-branch)))
 
-(defmethod pretty-print :while-stmt [{c :condition b :body}]
-  (parenthesize "while" c b))
+(defmethod pretty-print ::ast/while-stmt [{::ast/keys [condition body]}]
+  (parenthesize "while" condition body))
 
-(defmethod pretty-print :call [{c :callee args :arguments}]
+(defmethod pretty-print ::ast/call [{::ast/keys [callee arguments]}]
   (format "(call %s [%s])"
-          (pretty-print c)
-          (str/join ", " (map pretty-print args))))
+          (pretty-print callee)
+          (str/join ", " (map pretty-print arguments))))
 
-(defmethod pretty-print :get-expr [{obj :object n :name-token}]
-  (format "(get %s %s)" (pretty-print obj) (::token/lexeme n)))
+(defmethod pretty-print ::ast/get-expr [{::ast/keys [object name-token]}]
+  (format "(get %s %s)" (pretty-print object) (::token/lexeme name-token)))
 
-(defmethod pretty-print :set-expr [{obj :object n :name-token v :value}]
-  (format "(set %s %s %s)" (pretty-print obj) (::token/lexeme n) (pretty-print v)))
+(defmethod pretty-print ::ast/set-expr [{::ast/keys [object name-token value]}]
+  (format "(set %s %s %s)" 
+          (pretty-print object) (::token/lexeme name-token) (pretty-print value)))
 
-(defmethod pretty-print :fun-stmt [{name-token :name-token params :params body :body}]
+(defmethod pretty-print ::ast/fun-stmt [{::ast/keys [name-token params body]}]
   (format "(fun %s [%s] %s)"
           (::token/lexeme name-token)
           (str/join ", " (map ::token/lexeme params))
           (str/join " " (map pretty-print body))))
 
-(defmethod pretty-print :class-stmt [{name :name-token methods :methods}]
+(defmethod pretty-print ::ast/class-stmt [{::ast/keys [name-token methods]}]
   (format "(class %s \n%s)"
-          (::token/lexeme name)
+          (::token/lexeme name-token)
           (str/join "\n" (map pretty-print methods))))
 
-(defmethod pretty-print :this-expr [_]
+(defmethod pretty-print ::ast/this-expr [_]
   "*this*")
 
-(defmethod pretty-print :super [{method :method}]
+(defmethod pretty-print ::ast/super [{::ast/keys [method]}]
   (format "(super %s)" (::token/lexeme method)))

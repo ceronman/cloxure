@@ -94,7 +94,7 @@
         :else (recur (advance parser))))
 
 (defn- add-expr [parser expr]
-  (let [expr (assoc expr :loc (:current parser))]
+  (let [expr (assoc expr ::ast/location (:current parser))]
     (assoc parser :expr expr)))
 
 (defn- add-literal [parser value]
@@ -202,12 +202,12 @@
     (if (match? left ::token/equal)
       (let [after-equals (advance left)
             after-value (assignment after-equals)]
-        (case (:type left-expr)
-          :variable (add-expr after-value (ast/assign (:name-token left-expr)
-                                                      (:expr after-value)))
-          :get-expr (add-expr after-value (ast/set-expr (:object left-expr)
-                                                        (:name-token left-expr)
-                                                        (:expr after-value)))
+        (case (::ast/type left-expr)
+          ::ast/variable (add-expr after-value (ast/assign (::ast/name-token left-expr)
+                                                           (:expr after-value)))
+          ::ast/get-expr (add-expr after-value (ast/set-expr (::ast/object left-expr)
+                                                             (::ast/name-token left-expr)
+                                                             (:expr after-value)))
 
           (error left "Invalid assignment target.")))
       left)))
@@ -290,7 +290,7 @@
         [after-rparen params] (parameters after-lparen)
         after-lbrace (consume after-rparen ::token/lbrace (str "Expect '{' before " kind " body."))
         after-block (block after-lbrace)
-        body (:statements (:expr after-block))]
+        body (::ast/statements (:expr after-block))]
     (add-expr after-block (ast/fun-stmt name-token params body))))
 
 (defn- class-declaration [after-class]
