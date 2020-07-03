@@ -1,22 +1,23 @@
-(ns cloxure.scanner)
+(ns cloxure.scanner
+  (:require [cloxure.token :as token]))
 
 (def keywords ^:private
-  #{:and
-    :class
-    :else
-    :false
-    :for
-    :fun
-    :if
-    :nil
-    :or
-    :print
-    :return
-    :super
-    :this
-    :true
-    :var
-    :while})
+  #{"and"
+    "class"
+    "else"
+    "false"
+    "for"
+    "fun"
+    "if"
+    "nil"
+    "or"
+    "print"
+    "return"
+    "super"
+    "this"
+    "true"
+    "var"
+    "while"})
 
 (defn- new-scanner [source]
   {:source source
@@ -38,23 +39,14 @@
 (defn- advance [scanner]
   (update scanner :current inc))
 
-(defn- token
-  ([type text]
-   (token type text nil 1))
-  ([type text literal line]
-   {:type type
-    :lexeme text
-    :literal literal
-    :line line}))
-
 (defn- add-token
   ([scanner token-type]
    (add-token scanner token-type nil))
   ([scanner token-type literal]
-   (update scanner :tokens conj (token token-type
-                                       (current-text scanner)
-                                       literal
-                                       (:line scanner)))))
+   (update scanner :tokens conj (token/token token-type
+                                             (current-text scanner)
+                                             literal
+                                             (:line scanner)))))
 
 (defn- add-error [scanner message]
   (update scanner :errors conj {:type :scanner
@@ -96,7 +88,7 @@
 
     (= (current-char scanner) \")  (let [advanced (advance scanner)]
                                      (add-token advanced
-                                                :string
+                                                ::token/string
                                                 (subs (:source advanced)
                                                       (inc (:start advanced))
                                                       (dec (:current advanced)))))
@@ -109,46 +101,46 @@
   (if (or (at-end? scanner) (not (is-digit? (current-char scanner))))
     (if (and (match scanner \.) (is-digit? (peek-next scanner)))
       (recur (advance scanner))
-      (add-token scanner :number (Double/parseDouble (current-text scanner))))
+      (add-token scanner ::token/number (Double/parseDouble (current-text scanner))))
     (recur (advance scanner))))
 
 (defn- add-identifier [scanner]
   (if (or (at-end? scanner) (not (is-alphanumeric (current-char scanner))))
     (let [text (current-text scanner)]
-      (if-let [kw (keywords (keyword text))]
-        (add-token scanner kw)
-        (add-token scanner :identifier)))
+      (if (keywords text)
+        (add-token scanner (token/from-keyword text))
+        (add-token scanner ::token/identifier)))
     (recur (advance scanner))))
 
 (defn- scan-token [scanner]
   (let [char (current-char scanner)
         scanner (advance scanner)]
     (case char
-      \( (add-token scanner :lparen)
-      \) (add-token scanner :rparen)
-      \{ (add-token scanner :lbrace)
-      \} (add-token scanner :rbrace)
-      \, (add-token scanner :comma)
-      \. (add-token scanner :dot)
-      \- (add-token scanner :minus)
-      \+ (add-token scanner :plus)
-      \; (add-token scanner :semicolon)
-      \* (add-token scanner :star)
+      \( (add-token scanner ::token/lparen)
+      \) (add-token scanner ::token/rparen)
+      \{ (add-token scanner ::token/lbrace)
+      \} (add-token scanner ::token/rbrace)
+      \, (add-token scanner ::token/comma)
+      \. (add-token scanner ::token/dot)
+      \- (add-token scanner ::token/minus)
+      \+ (add-token scanner ::token/plus)
+      \; (add-token scanner ::token/semicolon)
+      \* (add-token scanner ::token/star)
       \! (if (match scanner \=)
-           (add-token (advance scanner) :bang_equal)
-           (add-token scanner :bang))
+           (add-token (advance scanner) ::token/bang_equal)
+           (add-token scanner ::token/bang))
       \= (if (match scanner \=)
-           (add-token (advance scanner) :equal_equal)
-           (add-token scanner :equal))
+           (add-token (advance scanner) ::token/equal_equal)
+           (add-token scanner ::token/equal))
       \< (if (match scanner \=)
-           (add-token (advance scanner) :less_equal)
-           (add-token scanner :less))
+           (add-token (advance scanner) ::token/less_equal)
+           (add-token scanner ::token/less))
       \> (if (match scanner \=)
-           (add-token (advance scanner) :greater_equal)
-           (add-token scanner :greater))
+           (add-token (advance scanner) ::token/greater_equal)
+           (add-token scanner ::token/greater))
       \/ (if (match scanner \/)
            (skip-comment (advance scanner))
-           (add-token scanner :slash))
+           (add-token scanner ::token/slash))
       (\return \space \tab) scanner
       \newline (update scanner :line inc)
       \" (add-string scanner)
@@ -164,7 +156,7 @@
 (defn scan [source]
   (loop [scanner (new-scanner source)]
     (if (at-end? scanner)
-      (add-token scanner :eof)
+      (add-token scanner ::token/eof)
       (recur (-> scanner
                  (scan-token)
                  (next-token))))))

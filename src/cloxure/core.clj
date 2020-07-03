@@ -1,5 +1,6 @@
 (ns cloxure.core
   (:require [cloxure.scanner :as scanner])
+  (:require [cloxure.token :as token])
   (:require [cloxure.parser :as parser])
   (:require [cloxure.resolver :as resolver])
   (:require [cloxure.interpreter :as interpreter]))
@@ -17,17 +18,17 @@
   (case (:type error)
     (:parser :resolver)
     (let [token (:token error)
-          line (:line token)
-          location (case (:type token)
-                     :eof "end"
-                     (format "'%s'" (:lexeme token)))]
+          line (::token/line token)
+          location (case (::token/type token)
+                     ::token/eof "end"
+                     (format "'%s'" (::token/lexeme token)))]
       (format "[line %d] Error at %s: %s" line location (:message error)))
 
     :scanner
     (format "[line %d] Error: %s" (:line error) (:message error))
 
     :runtime
-    (format "%s\n[line %d]" (:message error) (:line (:token error)))
+    (format "%s\n[line %d]" (:message error) (::token/line (:token error)))
 
     (throw (ex-info "Unkown error" error))))
 

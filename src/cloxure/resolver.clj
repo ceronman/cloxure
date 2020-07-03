@@ -1,4 +1,5 @@
-(ns cloxure.resolver)
+(ns cloxure.resolver
+  (:require [cloxure.token :as token]))
 
 (defn- new-resolver []
   {:scopes '() ; TODO: replace list with vector?
@@ -14,12 +15,12 @@
 
 (defn- add-var [resolver name-token ready?]
   (let [[scope & others] (:scopes resolver)
-        name (:lexeme name-token)]
+        name (::token/lexeme name-token)]
     (if scope
       (if (and (not ready?) (contains? scope name))
         (error resolver name-token 
                "Variable with this name already declared in this scope.")
-        (let [new-scope (assoc scope (:lexeme name-token) ready?)]
+        (let [new-scope (assoc scope (::token/lexeme name-token) ready?)]
           (assoc resolver :scopes (conj others new-scope))))
       resolver)))
 
@@ -34,7 +35,7 @@
          scopes (:scopes resolver)]
     (cond
       (empty? scopes) resolver
-      (contains? (peek scopes) (:lexeme name-token)) (add-local resolver node pos)
+      (contains? (peek scopes) (::token/lexeme name-token)) (add-local resolver node pos)
       :else (recur (inc pos) (rest scopes)))))
 
 (defn- begin-scope [resolver]
@@ -66,7 +67,7 @@
 (defmethod resolve-locals :variable [resolver node]
   (let [name-token (:name-token node)
         [scope & _] (:scopes resolver)
-        resolver (if (and scope (false? (get scope (:lexeme name-token))))
+        resolver (if (and scope (false? (get scope (::token/lexeme name-token))))
                    (error resolver
                           name-token
                           "Cannot read local variable in its own initializer.")
@@ -97,7 +98,7 @@
 (defn- resolve-methods [resolver methods]
   (reduce
    (fn [resolver method]
-     (if (= (-> method :name-token :lexeme) "init")
+     (if (= (-> method :name-token ::token/lexeme) "init")
        (resolve-function resolver method :initializer)
        (resolve-function resolver method :method)))
    resolver
@@ -107,13 +108,13 @@
   (-> resolver
       (resolve-locals superclass)
       (begin-scope)
-      (add-var {:lexeme "super"} true)))
+      (add-var {::token/lexeme "super"} true)))
 
 (defmethod resolve-locals :class-stmt [resolver node]
   (let [prev-class (:current-class resolver)
-        name (:lexeme (:name-token node))
+        name (::token/lexeme (:name-token node))
         superclass (:superclass node)
-        superclass-name (:lexeme (:name-token superclass))]
+        superclass-name (::token/lexeme (:name-token superclass))]
     (if (and superclass (= name superclass-name))
       (error resolver
              (:name-token superclass)
@@ -122,7 +123,7 @@
           (add-var (:name-token node) true)
           (cond-> superclass (resolve-superclass superclass))
           (begin-scope)
-          (add-var {:lexeme "this"} true) ;; TODO: hacky!
+          (add-var {::token/lexeme "this"} true) ;; TODO: hacky!
           (assoc :current-class (if (:superclass node) :subclass :class))
           (resolve-methods (:methods node))
           (assoc :current-class prev-class)

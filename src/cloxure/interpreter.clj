@@ -1,4 +1,5 @@
-(ns cloxure.interpreter)
+(ns cloxure.interpreter
+  (:require [cloxure.token :as token]))
 
 ; TODO: this is for debugging purposes, remove later.
 (set! clojure.core/*print-level* 5)
@@ -42,7 +43,7 @@
     (get @env name)))
 
 (defn- env-get [env name-token]
-  (let [name (:lexeme name-token)]
+  (let [name (::token/lexeme name-token)]
    (if (contains? @env name)
      (get @env name)
      (runtime-error name-token (format "Undefined variable '%s'." name)))))
@@ -52,19 +53,19 @@
   env)
 
 (defn- env-assign! [env name-token value]
-  (let [name (:lexeme name-token)]
+  (let [name (::token/lexeme name-token)]
     (if (contains? @env name)
      (swap! env assoc name value)
      (runtime-error name-token (format "Undefined variable '%s'." name)))))
 
 (defn- declare-variable [state name-token value]
   (let [env (:environment state)]
-    (env-declare! env (:lexeme name-token) value)
+    (env-declare! env (::token/lexeme name-token) value)
     state))
 
 (defn- lookup-variable [state name-token expr]
   (if-let [distance (get-in state [:locals expr])]
-    (assoc state :result (env-get-at (:environment state) distance (:lexeme name-token)))
+    (assoc state :result (env-get-at (:environment state) distance (::token/lexeme name-token)))
     (assoc state :result (env-get (:globals state) name-token))))
 
 (defn- assign-variable [state name-token expr value]
@@ -110,10 +111,10 @@
 (defmethod evaluate :unary [state unary-expr]
   (let [state (evaluate state (:right unary-expr))
         right (:result state)
-        operator (:type (:operator unary-expr))]
+        operator (::token/type (:operator unary-expr))]
     (assoc state :result (case operator
-                           :minus (numeric-operation (:operator unary-expr) - right)
-                           :bang (not (truthy? right))))))
+                           ::token/minus (numeric-operation (:operator unary-expr) - right)
+                           ::token/bang (not (truthy? right))))))
 
 (defmethod evaluate :binary [state binary-expr]
   (let [state (evaluate state (:left binary-expr))
@@ -121,35 +122,35 @@
         state (evaluate state (:right binary-expr))
         right (:result state)
         op-token (:operator binary-expr)
-        operator (:type (:operator binary-expr))]
+        operator (::token/type (:operator binary-expr))]
     (assoc state :result
            (case operator
-             :bang_equal (not= left right)
-             :equal_equal (= left right)
-             :greater (numeric-operation op-token > left right)
-             :greater_equal (numeric-operation op-token >= left right)
-             :less (numeric-operation op-token < left right)
-             :less_equal (numeric-operation op-token <= left right)
-             :minus (numeric-operation op-token - left right)
-             :plus (cond
-                     (and (instance? Double left) (instance? Double right))
-                     (+ left right)
-                     (and (instance? String left) (instance? String right))
-                     (str left right)
-                     :else
-                     (runtime-error op-token 
-                                    "Operands must be two numbers or two strings."))
-             :slash (numeric-operation op-token / left right)
-             :star (numeric-operation op-token * left right)))))
+             ::token/bang_equal (not= left right)
+             ::token/equal_equal (= left right)
+             ::token/greater (numeric-operation op-token > left right)
+             ::token/greater_equal (numeric-operation op-token >= left right)
+             ::token/less (numeric-operation op-token < left right)
+             ::token/less_equal (numeric-operation op-token <= left right)
+             ::token/minus (numeric-operation op-token - left right)
+             ::token/plus (cond
+                            (and (instance? Double left) (instance? Double right))
+                            (+ left right)
+                            (and (instance? String left) (instance? String right))
+                            (str left right)
+                            :else
+                            (runtime-error op-token
+                                           "Operands must be two numbers or two strings."))
+             ::token/slash (numeric-operation op-token / left right)
+             ::token/star (numeric-operation op-token * left right)))))
 
 (defmethod evaluate :logical [state logical-expr]
   (let [state (evaluate state (:left logical-expr))
         left (:result state)
-        operator (:type (:operator logical-expr))
+        operator (::token/type (:operator logical-expr))
         left-truthy? (truthy? left)]
     (cond
-      (and (= operator :or) left-truthy?) state
-      (and (= operator :and) (not left-truthy?)) state
+      (and (= operator ::token/or) left-truthy?) state
+      (and (= operator ::token/and) (not left-truthy?)) state
       :else (evaluate state (:right logical-expr)))))
 
 (defmethod evaluate :var-stmt [state var-stmt]
@@ -226,7 +227,7 @@
 (defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
   (arity [this] (-> this :declaration :params count))
-  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name-token :lexeme])))
+  (to-string [this] (format "<fn %s>" (get-in this [:declaration :name-token ::token/lexeme])))
   (call [this state args]
         (let [declaration (:declaration this)
               env (:environment state)
@@ -259,7 +260,7 @@
 
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
-        name (:lexeme name-token)]
+        name (::token/lexeme name-token)]
     (if (contains? @fields name)
       (get @fields name)
       (if-let [method (find-method (:lox-class object) name)]
@@ -282,7 +283,7 @@
       (assoc state :result instance))))
 
 (defn- instance-set! [object name-token value]
-  (swap! (:fields object) assoc (:lexeme name-token) value))
+  (swap! (:fields object) assoc (::token/lexeme name-token) value))
 
 (defmethod evaluate :this-expr [state this-expr]
   (lookup-variable state (:keyword this-expr) this-expr))
@@ -311,7 +312,7 @@
         env (:environment state)
         lox-class (env-get-at env distance "super")
         object (env-get-at env (dec distance) "this")
-        method-name (:lexeme (:method super-expr))
+        method-name (::token/lexeme (:method super-expr))
         method (find-method lox-class method-name)]
     (if method
       (assoc state :result (lox-fn-bind method object))
@@ -379,10 +380,10 @@
               env)
         methods (->> (:methods class-stmt)
                      (map (fn [fun-stmt]
-                            (let [name (:lexeme (:name-token fun-stmt))]
+                            (let [name (::token/lexeme (:name-token fun-stmt))]
                               [name (->LoxFunction fun-stmt env (= name "init"))])))
                      (into {}))
-        lox-class (->LoxClass (:lexeme name-token) superclass methods)]
+        lox-class (->LoxClass (::token/lexeme name-token) superclass methods)]
     (declare-variable state name-token lox-class)))
 
 
