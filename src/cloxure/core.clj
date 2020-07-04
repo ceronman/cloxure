@@ -25,7 +25,7 @@
         errors (concat scanner-errors parser-errors)]
     (if (seq errors)
       (report-errors state errors)
-      (let [{:keys [errors locals]} (resolver/locals statements)]
+      (let [[locals errors] (resolver/locals statements)]
         (if (seq errors)
           (report-errors state errors)
           (let [state (interpreter/interpret state statements locals)]

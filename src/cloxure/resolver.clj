@@ -5,45 +5,45 @@
    [cloxure.error :refer [token-error]]))
 
 (defn- new-resolver []
-  {:scopes '() ; TODO: replace list with vector?
-   :locals {}
-   :errors []
-   :current-fn nil
-   :current-class nil})
+  {::scopes '() ; TODO: replace list with vector?
+   ::locals {}
+   ::errors []
+   ::current-fn nil
+   ::current-class nil})
 
 (defn- error [resolver token message]
-  (update resolver :errors conj (token-error token message)))
+  (update resolver ::errors conj (token-error token message)))
 
 (defn- add-var [resolver name-token ready?]
-  (let [[scope & others] (:scopes resolver)
+  (let [[scope & others] (::scopes resolver)
         name (::token/lexeme name-token)]
     (if scope
       (if (and (not ready?) (contains? scope name))
         (error resolver name-token 
                "Variable with this name already declared in this scope.")
         (let [new-scope (assoc scope (::token/lexeme name-token) ready?)]
-          (assoc resolver :scopes (conj others new-scope))))
+          (assoc resolver ::scopes (conj others new-scope))))
       resolver)))
 
 (defn- add-vars [resolver name-tokens ready?]
   (reduce #(add-var %1 %2 ready?) resolver name-tokens))
 
 (defn- add-local [resolver node pos]
-  (update resolver :locals assoc node pos))
+  (update resolver ::locals assoc node pos))
 
 (defn- resolve-local [resolver node name-token]
   (loop [pos 0
-         scopes (:scopes resolver)]
+         scopes (::scopes resolver)]
     (cond
       (empty? scopes) resolver
       (contains? (peek scopes) (::token/lexeme name-token)) (add-local resolver node pos)
       :else (recur (inc pos) (rest scopes)))))
 
 (defn- begin-scope [resolver]
-  (update resolver :scopes conj {}))
+  (update resolver ::scopes conj {}))
 
 (defn- end-scope [resolver]
-  (update resolver :scopes pop))
+  (update resolver ::scopes pop))
 
 (defmulti resolve-locals
   "Statically resolves scoping of variables"
@@ -67,7 +67,7 @@
 
 (defmethod resolve-locals ::ast/variable [resolver node]
   (let [name-token (::ast/name-token node)
-        [scope & _] (:scopes resolver)
+        [scope & _] (::scopes resolver)
         resolver (if (and scope (false? (get scope (::token/lexeme name-token))))
                    (error resolver
                           name-token
@@ -81,14 +81,14 @@
       (resolve-local node (::ast/name-token node))))
 
 (defn- resolve-function [resolver fun-stmt fn-type]
-  (let [prev-fn (:current-fn resolver)]
+  (let [prev-fn (::current-fn resolver)]
     (-> resolver
         (begin-scope)
-        (assoc :current-fn fn-type)
+        (assoc ::current-fn fn-type)
         (add-vars (::ast/params fun-stmt) false)
         (add-vars (::ast/params fun-stmt) true)
         (resolve-statements (::ast/body fun-stmt))
-        (assoc :current-fn prev-fn)
+        (assoc ::current-fn prev-fn)
         (end-scope))))
 
 (defmethod resolve-locals ::ast/fun-stmt [resolver node]
@@ -112,7 +112,7 @@
       (add-var {::token/lexeme "super"} true)))
 
 (defmethod resolve-locals ::ast/class-stmt [resolver node]
-  (let [prev-class (:current-class resolver)
+  (let [prev-class (::current-class resolver)
         name (::token/lexeme (::ast/name-token node))
         superclass (::ast/superclass node)
         superclass-name (::token/lexeme (::ast/name-token superclass))]
@@ -125,9 +125,9 @@
           (cond-> superclass (resolve-superclass superclass))
           (begin-scope)
           (add-var {::token/lexeme "this"} true) ;; TODO: hacky!
-          (assoc :current-class (if (::ast/superclass node) :subclass :class))
+          (assoc ::current-class (if (::ast/superclass node) :subclass :class))
           (resolve-methods (::ast/methods node))
-          (assoc :current-class prev-class)
+          (assoc ::current-class prev-class)
           (end-scope)
           (cond-> superclass (end-scope))))))
 
@@ -177,14 +177,14 @@
       (resolve-locals (::ast/value node))))
 
 (defmethod resolve-locals ::ast/this-expr [resolver node]
-  (if (nil? (:current-class resolver))
+  (if (nil? (::current-class resolver))
     (error resolver
            (::ast/keyword node)
            "Cannot use 'this' outside of a class.")
     (resolve-local resolver node (::ast/keyword node))))
 
 (defmethod resolve-locals ::ast/super [resolver node]
-  (case (:current-class resolver)
+  (case (::current-class resolver)
     :subclass (resolve-local resolver node (::ast/keyword node))
     nil (error resolver (::ast/keyword node) 
                "Cannot use 'super' outside of a class.")
@@ -192,86 +192,19 @@
            "Cannot use 'super' in a class with no superclass.")))
 
 (defmethod resolve-locals ::ast/return-stmt [resolver node]
-  (if (nil? (:current-fn resolver))
+  (if (nil? (::current-fn resolver))
     (error resolver
            (::ast/keyword node)
            "Cannot return from top-level code.")
     (if (::ast/value node)
-      (if (= (:current-fn resolver) ::ast/initializer)
+      (if (= (::current-fn resolver) ::ast/initializer)
         (error resolver
                (::ast/keyword node)
                "Cannot return a value from an initializer.")
         (resolve-locals resolver (::ast/value node)))
       resolver)))
 
-(require '[cloxure.scanner :as scanner])
-(require '[cloxure.parser :as parser])
-
 (defn locals [statements]
-  (-> (new-resolver)
-      (resolve-statements statements)))
-
-(defn- test-resolver [code]
-  (let [{errors :errors tokens :tokens} (scanner/scan code)]
-    (if (seq errors)
-      errors
-      (let [{errors :errors statements :statements} (parser/parse tokens)]
-        (if (seq errors)
-          errors
-          (let [{errors :errors locals :locals} (locals statements)]
-            (if (seq errors)
-              errors
-              locals)))))))
-
-(comment (test-resolver
-          "var a;"))
-
-(comment (test-resolver
-          "{ var a; a; }"))
-
-(comment (test-resolver
-          "{ var a; { a; } }"))
-
-(comment (test-resolver
-          "{ var a; { var a = a; } }"))
-
-(comment (test-resolver
-          "{ var a; var b; a = b; }"))
-
-(comment (test-resolver
-          "{ var a; if (a) { a = b; } }"))
-
-(comment (test-resolver
-          "{ var a; if (a) { a = b; } else { a = c; }}"))
-
-(comment (test-resolver
-          "{ var a; print a; }"))
-
-(comment (test-resolver
-          "{ var a; { print a; } }"))
-
-(comment (test-resolver
-          "{ var a; { a + b; a or a; while (true) {a;} !a; (a); 1;} }"))
-
-(comment (test-resolver
-          "fun test(one, two) { print one; }"))
-
-(comment (test-resolver
-          "return 1;"))
-
-(comment (test-resolver "
-class Eclair {
-  cook() {
-    super.cook();
-    print 1;
-  }
-}
-"))
-
-(comment (test-resolver "
-super.notEvenInAClass ();
-"))
-
-(comment (test-resolver "
-\"str\".foo;
-"))
+  (let [resolver (new-resolver)
+        resolver (resolve-statements resolver statements)]
+    [(::locals resolver) (::errors resolver)]))
