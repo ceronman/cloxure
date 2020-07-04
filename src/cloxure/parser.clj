@@ -60,30 +60,30 @@
 ;; -----------------------------------------------------------------                 
 
 (defn- new-parser [tokens]
-  {:tokens tokens
-   :errors []
-   :statements []
-   :current 0
-   :expr nil})
+  {::tokens tokens
+   ::errors []
+   ::statements []
+   ::current 0
+   ::expr nil})
 
 (defn- current-token [parser]
-  (nth (:tokens parser) (:current parser)))
+  (nth (::tokens parser) (::current parser)))
 
 (defn- prev-token [parser]
-  (nth (:tokens parser) (dec (:current parser))))
+  (nth (::tokens parser) (dec (::current parser))))
 
 (defn- at-end? [parser]
   (= (::token/type (current-token parser)) ::token/eof))
 
 (defn- advance [parser]
-  (update parser :current inc))
+  (update parser ::current inc))
 
 (defn- check? [parser & token-types]
   (and (not (at-end? parser))
        (some #(= (::token/type (current-token parser)) %) token-types)))
 
 (defn- add-error [parser message]
-  (update parser :errors conj (token-error (current-token parser) message)))
+  (update parser ::errors conj (token-error (current-token parser) message)))
 
 (defn- error-and-throw [parser message]
   (let [parser (add-error parser message)]
@@ -103,8 +103,8 @@
         :else (recur (advance parser))))
 
 (defn- add-expr [parser expr]
-  (let [expr (assoc expr ::ast/location (:current parser))]
-    (assoc parser :expr expr)))
+  (let [expr (assoc expr ::ast/location (::current parser))]
+    (assoc parser ::expr expr)))
 
 (defn- add-literal [parser value]
   (advance (add-expr parser (ast/literal value))))
@@ -136,7 +136,7 @@
     (check? parser ::token/lparen)
     (let [middle (expression (advance parser))]
       (add-expr (consume middle ::token/rparen "Expect ')' after expression.")
-                (ast/group (:expr middle))))
+                (ast/group (::expr middle))))
 
     (check? parser ::token/super)
     (let [after-dot (consume (advance parser) ::token/dot
@@ -154,7 +154,7 @@
   arguments → expression (''expression) * ;"
   [after-lparen]
   (if (check? after-lparen ::token/rparen)
-    (assoc (advance after-lparen) :expr [])
+    (assoc (advance after-lparen) ::expr [])
     (loop [parser after-lparen
            args []]
       (let [after-arg (expression parser)
@@ -162,12 +162,12 @@
                         (advance 
                          (add-error parser "Cannot have more than 255 arguments."))
                         after-arg)
-            args (conj args (:expr after-arg))]
+            args (conj args (::expr after-arg))]
         (if (check? after-arg ::token/comma)
           (recur (advance after-arg) args)
           (assoc (consume after-arg ::token/rparen
                           "Expect ')' after arguments.")
-                 :expr args))))))
+                 ::expr args))))))
 
 (defn- call
   "Parses a `call` expression.
@@ -179,16 +179,16 @@
     (cond
       (check? parser ::token/lparen)
       (let [after-args (arguments (advance parser))]
-        (recur (add-expr after-args (ast/call (:expr parser) 
+        (recur (add-expr after-args (ast/call (::expr parser) 
                                               (prev-token after-args) 
-                                              (:expr after-args)))))
+                                              (::expr after-args)))))
 
       (check? parser ::token/dot)
       (let [after-dot (advance parser)
             after-identifier (consume after-dot ::token/identifier
                                       "Expect property name after '.'.")]
         (recur (add-expr after-identifier
-                         (ast/get-expr (:expr parser) (current-token after-dot)))))
+                         (ast/get-expr (::expr parser) (current-token after-dot)))))
       :else
       parser)))
 
@@ -200,7 +200,7 @@
   (if (check? parser ::token/bang ::token/minus)
     (let [operator (current-token parser)
           right (unary (advance parser))]
-      (add-expr right (ast/unary operator (:expr right))))
+      (add-expr right (ast/unary operator (::expr right))))
     (call parser)))
 
 (defn- binary-operation [parser base-expr & operators]
@@ -208,7 +208,7 @@
     (if (apply check? left operators)
       (let [op (current-token left)
             right (base-expr (advance left))]
-        (recur (add-expr right (ast/binary (:expr left) op (:expr right)))))
+        (recur (add-expr right (ast/binary (::expr left) op (::expr right)))))
       left)))
 
 (defn- multiplication 
@@ -246,7 +246,7 @@
     (if (apply check? left operators)
       (let [op (current-token left)
             right (base-expr (advance left))]
-        (recur (add-expr right (ast/logical (:expr left) op (:expr right)))))
+        (recur (add-expr right (ast/logical (::expr left) op (::expr right)))))
       left)))
 
 (defn- logical-and 
@@ -270,19 +270,19 @@
                 | logic_or;"
   [parser]
   (let [left (logical-or parser)
-        left-expr (:expr left)]
+        left-expr (::expr left)]
     (if (check? left ::token/equal)
       (let [after-equals (advance left)
             after-value (assignment after-equals)]
         (case (::ast/type left-expr)
           ::ast/variable
           (add-expr after-value (ast/assign (::ast/name-token left-expr)
-                                            (:expr after-value)))
+                                            (::expr after-value)))
 
           ::ast/get-expr
           (add-expr after-value (ast/set-expr (::ast/object left-expr)
                                               (::ast/name-token left-expr)
-                                              (:expr after-value)))
+                                              (::expr after-value)))
 
           (error-and-throw left "Invalid assignment target.")))
       left)))
@@ -309,7 +309,7 @@
          statements []]
     (if-not (or (at-end? parser) (check? parser ::token/rbrace))
       (let [after-declaration (declaration parser)]
-        (recur after-declaration (conj statements (:expr after-declaration))))
+        (recur after-declaration (conj statements (::expr after-declaration))))
       (add-expr (consume parser ::token/rbrace "Expect '}' after block.")
                 (ast/block statements)))))
 
@@ -322,8 +322,8 @@
         condition (expression after-lparen)
         after-rparen (consume condition ::token/rparen "Expect ')' after condition.")
         after-body (statement after-rparen)]
-    (add-expr after-body (ast/while-stmt (:expr condition)
-                                         (:expr after-body)))))
+    (add-expr after-body (ast/while-stmt (::expr condition)
+                                         (::expr after-body)))))
 
 (defn- return-stmt 
   "Parses a `returnStmt` statement.
@@ -333,11 +333,11 @@
   (let [keyword (current-token parser)
         after-keyword (advance parser)
         after-value (if (check? after-keyword ::token/semicolon)
-                      (assoc after-keyword :expr nil)
+                      (assoc after-keyword ::expr nil)
                       (expression after-keyword))
         after-semicolon (consume after-value ::token/semicolon 
                                  "Expect ';' after return value.")]
-    (add-expr after-semicolon (ast/return-stmt keyword (:expr after-value)))))
+    (add-expr after-semicolon (ast/return-stmt keyword (::expr after-value)))))
 
 (defn- print-stmt 
   "Parses a `printStmt` statement.
@@ -347,7 +347,7 @@
   (let [after-expression (expression after-print)
         after-semicolon (consume after-expression ::token/semicolon 
                                  "Expect ';' after value.")]
-    (add-expr after-semicolon (ast/print-stmt (:expr after-expression)))))
+    (add-expr after-semicolon (ast/print-stmt (::expr after-expression)))))
 
 (defn- if-stmt 
   "Parses an `ifStmt` statement.
@@ -363,9 +363,9 @@
         after-else (when (check? after-then ::token/else)
                      (statement (advance after-then)))]
     (add-expr (or after-else after-then)
-              (ast/if-stmt (:expr condition)
-                           (:expr after-then)
-                           (:expr after-else)))))
+              (ast/if-stmt (::expr condition)
+                           (::expr after-then)
+                           (::expr after-else)))))
 (defn- expression-stmt
   "Parses an `exprStmt` element.
    
@@ -374,7 +374,7 @@
   (let [after-expression (expression parser)
         after-semicolon (consume after-expression ::token/semicolon
                                  "Expect ';' after expression.")]
-    (add-expr after-semicolon (:expr after-semicolon))))
+    (add-expr after-semicolon (::expr after-semicolon))))
 
 (defn- for-stmt 
   "Parses a `forStmt` statement.
@@ -402,12 +402,12 @@
                     (expression condition))
         after-rparen (consume increment ::token/rparen "Expect ')' after for clauses.")
         body (statement after-rparen)
-        expr (:expr body)
-        expr (if-let [increment-expr (:expr increment)]
+        expr (::expr body)
+        expr (if-let [increment-expr (::expr increment)]
                (ast/block [expr increment-expr])
                expr)
-        expr (ast/while-stmt (:expr condition) expr)
-        expr (if-let [initializer-expr (:expr initializer)]
+        expr (ast/while-stmt (::expr condition) expr)
+        expr (if-let [initializer-expr (::expr initializer)]
                (ast/block [initializer-expr expr])
                expr)]
     (add-expr body expr)))
@@ -447,7 +447,7 @@
                                  "Expect ';' after expression.")]
     (add-expr after-semicolon
               (ast/var-stmt (current-token after-var)
-                            (if initializer? (:expr before-semicolon) nil)))))
+                            (if initializer? (::expr before-semicolon) nil)))))
 
 (defn- parameters 
   "Parses a `parameters` element.
@@ -455,7 +455,7 @@
    parameters → IDENTIFIER (''IDENTIFIER) * ;"
   [after-lparen]
   (if (check? after-lparen ::token/rparen)
-    (assoc (advance after-lparen) :expr [])
+    (assoc (advance after-lparen) ::expr [])
     (loop [parser after-lparen
            params []]
       (let [after-param (consume parser ::token/identifier "Expect parameter name.")
@@ -468,7 +468,7 @@
           (recur (advance after-param) params)
           (assoc (consume after-param ::token/rparen 
                           "Expect ')' after parameters.") 
-                 :expr params))))))
+                 ::expr params))))))
 
 (defn- function
   "Parses a `function` element.
@@ -484,8 +484,8 @@
         after-lbrace (consume after-params ::token/lbrace 
                               (str "Expect '{' before " kind " body."))
         after-block (block after-lbrace)
-        body (::ast/statements (:expr after-block))]
-    (add-expr after-block (ast/fun-stmt name-token (:expr after-params) body))))
+        body (::ast/statements (::expr after-block))]
+    (add-expr after-block (ast/fun-stmt name-token (::expr after-params) body))))
 
 (defn- fun-declaration 
   "Parses a `funDecl` declaration.
@@ -514,7 +514,7 @@
         (let [after-rbrace (consume parser ::token/rbrace "Expect '}' after class body.")]
           (add-expr after-rbrace (ast/class-stmt name superclass methods)))
         (let [after-method (function parser "method")]
-          (recur after-method (conj methods (:expr after-method))))))))
+          (recur after-method (conj methods (::expr after-method))))))))
 
 (defn- declaration 
   "Parses a top level `declaration`.
@@ -533,7 +533,7 @@
     (catch clojure.lang.ExceptionInfo e
       (-> (ex-data e)
           (synchronize)
-          (assoc :expr nil)))))
+          (assoc ::expr nil)))))
 
 (defn parse 
   "Parses a Lox program from a list of tokens.
@@ -544,9 +544,9 @@
   [tokens]
   (loop [parser (new-parser tokens)]
     (if (at-end? parser)
-      [(:statements parser) (:errors parser)]
+      [(::statements parser) (::errors parser)]
       (recur
        (let [after-statement (declaration parser)]
          (-> after-statement
-             (update :statements conj (:expr after-statement))
-             (assoc :expr nil)))))))
+             (update ::statements conj (::expr after-statement))
+             (assoc ::expr nil)))))))
