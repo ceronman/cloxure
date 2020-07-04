@@ -1,0 +1,1 @@
+{ print "bad"; // Error at end: Expect '}' after block.

@@ -1,9 +1,19 @@
 (ns cloxure.scanner
-  "Scanner/Tokenizer for the Lox programming language"
+  "Scanner/Tokenizer for the Lox programming language."
   (:require [cloxure.token :as token]))
 
+;; -----------------------------------------------------------------
+;; Lexical Grammar:
+;; -----------------------------------------------------------------
+;; NUMBER         → DIGIT+ ("." DIGIT+) ? ;
+;; STRING         → "\"" <any char except "\"" >* "\"" ;
+;; IDENTIFIER     → ALPHA (ALPHA | DIGIT) * ;
+;; ALPHA          → "a" ... "z" | "A" ... "Z" | "_" ;
+;; DIGIT          → "0" ... "9" ;
+;; -----------------------------------------------------------------
+
 (def reserved-words
-  "List of reserved words of the Lox language"
+  "List of reserved words of the Lox language."
   #{"and"
     "class"
     "else"
@@ -52,7 +62,7 @@
 
 (defn- add-error [scanner message]
   (update scanner :errors conj {:type :scanner
-                                :line (:line scanner) 
+                                :line (:line scanner)
                                 :message message}))
 
 (defn- match [scanner expected]
@@ -94,7 +104,7 @@
                                                 (subs (:source advanced)
                                                       (inc (:start advanced))
                                                       (dec (:current advanced)))))
-    
+
     :else (recur (advance (if (= (current-char scanner) \newline)
                             (update scanner :line inc)
                             scanner)))))
@@ -146,8 +156,8 @@
       (\return \space \tab) scanner
       \newline (update scanner :line inc)
       \" (add-string scanner)
-      
-      (cond 
+
+      (cond
         (digit? char) (add-number scanner)
         (alpha? char) (add-identifier scanner)
         :else (add-error scanner (str "Unexpected character."))))))
