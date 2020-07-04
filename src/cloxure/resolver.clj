@@ -1,6 +1,8 @@
 (ns cloxure.resolver
-  (:require [cloxure.token :as token]
-            [cloxure.ast :as ast]))
+  (:require
+   [cloxure.token :as token]
+   [cloxure.ast :as ast]
+   [cloxure.error :refer [token-error]]))
 
 (defn- new-resolver []
   {:scopes '() ; TODO: replace list with vector?
@@ -10,9 +12,7 @@
    :current-class nil})
 
 (defn- error [resolver token message]
-  (update resolver :errors conj {:type :resolver
-                                 :token token 
-                                 :message message}))
+  (update resolver :errors conj (token-error token message)))
 
 (defn- add-var [resolver name-token ready?]
   (let [[scope & others] (:scopes resolver)

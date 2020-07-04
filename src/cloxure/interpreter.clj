@@ -1,6 +1,8 @@
 (ns cloxure.interpreter
-  (:require [cloxure.token :as token]
-            [cloxure.ast :as ast]))
+  (:require
+   [cloxure.token :as token]
+   [cloxure.ast :as ast]
+   [cloxure.error :refer [runtime-error]]))
 
 ; TODO: this is for debugging purposes, remove later.
 (set! clojure.core/*print-level* 5)
@@ -30,9 +32,9 @@
      :environment globals
      :locals {}}))
 
-(defn- runtime-error [token message]
-  (throw (ex-info "Lox Runtime Error" 
-                  {:type :runtime :token token :message message})))
+(defn- raise-error [token message]
+  (throw (ex-info "Runtime Error" 
+                  {::error (runtime-error token message)})))
 
 (defn- env-ancestor [env distance]
   (if (zero? distance)
@@ -47,7 +49,7 @@
   (let [name (::token/lexeme name-token)]
    (if (contains? @env name)
      (get @env name)
-     (runtime-error name-token (format "Undefined variable '%s'." name)))))
+     (raise-error name-token (format "Undefined variable '%s'." name)))))
 
 (defn- env-declare! [env name value]
   (swap! env assoc name value)
@@ -57,7 +59,7 @@
   (let [name (::token/lexeme name-token)]
     (if (contains? @env name)
      (swap! env assoc name value)
-     (runtime-error name-token (format "Undefined variable '%s'." name)))))
+     (raise-error name-token (format "Undefined variable '%s'." name)))))
 
 (defn- declare-variable [state name-token value]
   (let [env (:environment state)]
@@ -93,11 +95,11 @@
   ([op-token operator left right]
    (if (and (instance? Double left) (instance? Double right))
      (operator left right)
-     (runtime-error op-token "Operands must be numbers.")))
+     (raise-error op-token "Operands must be numbers.")))
   ([op-token operator right]
    (if (instance? Double right)
      (operator right)
-     (runtime-error op-token "Operand must be a number."))))
+     (raise-error op-token "Operand must be a number."))))
 
 (defmulti evaluate
   "Interprets a Lox AST"
@@ -139,7 +141,7 @@
                             (and (instance? String left) (instance? String right))
                             (str left right)
                             :else
-                            (runtime-error op-token
+                            (raise-error op-token
                                            "Operands must be two numbers or two strings."))
              ::token/slash (numeric-operation op-token / left right)
              ::token/star (numeric-operation op-token * left right)))))
@@ -197,10 +199,10 @@
         arguments (:result state)]
     (cond
       (not (satisfies? LoxCallable callee))
-      (runtime-error (::ast/paren call-expr) "Can only call functions and classes.")
+      (raise-error (::ast/paren call-expr) "Can only call functions and classes.")
 
       (not= (arity callee) (count arguments))
-      (runtime-error (::ast/paren call-expr)
+      (raise-error (::ast/paren call-expr)
                      (format "Expected %d arguments but got %d."
                              (arity callee)
                              (count arguments)))
@@ -220,8 +222,8 @@
         (assoc :result (if initializer? (env-get-at closure 0 "this") nil)))
     ; TODO: Investigate custom exceptions
     (catch clojure.lang.ExceptionInfo e
-      (let [{type :type state :state} (ex-data e)]
-        (if (= type :return)
+      (let [{return? ::return? state ::state} (ex-data e)]
+        (if return?
           (if initializer? (assoc state :result (env-get-at closure 0 "this")) state)
           (throw e))))))
 
@@ -266,7 +268,7 @@
       (get @fields name)
       (if-let [method (find-method (:lox-class object) name)]
         (lox-fn-bind method object)
-        (runtime-error name-token (str "Undefined property '" name "'."))))))
+        (raise-error name-token (str "Undefined property '" name "'."))))))
 
 (defrecord LoxClass [name superclass methods]
   LoxCallable
@@ -295,7 +297,7 @@
         object (:result state)]
     (if (instance? LoxInstance object)
       (assoc state :result (instance-get object name-token))
-      (runtime-error name-token "Only instances have properties."))))
+      (raise-error name-token "Only instances have properties."))))
 
 (defmethod evaluate ::ast/set-expr [state set-expr]
   (let [name-token (::ast/name-token set-expr)
@@ -306,7 +308,7 @@
             value (:result state)]
         (instance-set! object name-token value)
         (assoc state :result value))
-      (runtime-error name-token "Only instances have fields."))))
+      (raise-error name-token "Only instances have fields."))))
 
 (defmethod evaluate ::ast/super [state super-expr]
   (let [distance (get-in state [:locals super-expr])
@@ -317,7 +319,7 @@
         method (find-method lox-class method-name)]
     (if method
       (assoc state :result (lox-fn-bind method object))
-      (runtime-error (::ast/method super-expr) 
+      (raise-error (::ast/method super-expr) 
                      (str "Undefined property '" method-name "'.")))))
 
 ;; TODO: Polymorphism please!!!
@@ -359,8 +361,8 @@
 (defmethod evaluate ::ast/return-stmt [state return-stmt]
   (let [value (::ast/value return-stmt)
         state (if value (evaluate state value) (assoc state :result nil))]
-    (throw (ex-info "return" {:type :return
-                              :state state}))))
+    (throw (ex-info "return" {::return? true
+                              ::state state}))))
 
 (defn- evaluate-superclass [state class-stmt]
   (if-let [superclass (::ast/superclass class-stmt)]
@@ -368,7 +370,7 @@
           value (:result state)]
       (if (instance? LoxClass value)
         state
-        (runtime-error (::ast/name-token superclass) "Superclass must be a class.")))
+        (raise-error (::ast/name-token superclass) "Superclass must be a class.")))
     (assoc state :result nil)))
 
 (defmethod evaluate ::ast/class-stmt [state class-stmt]
@@ -392,10 +394,10 @@
   (try
     (evaluate-statements (update state :locals merge locals) statements)
     (catch clojure.lang.ExceptionInfo e
-      (case (:type (ex-data e))
-        :runtime (-> state
-                     (update :errors conj (ex-data e))
-                     (assoc :result nil))
+      (if-let [lox-error (::error (ex-data e))]
+        (-> state
+            (update :errors conj lox-error)
+            (assoc :result nil))
         (throw e)))))
   
 (require '[cloxure.scanner :as scanner])

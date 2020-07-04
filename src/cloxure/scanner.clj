@@ -1,6 +1,8 @@
 (ns cloxure.scanner
   "Scanner/Tokenizer for the Lox programming language."
-  (:require [cloxure.token :as token]))
+  (:require
+   [cloxure.token :as token]
+   [cloxure.error :refer [line-error]]))
 
 ;; -----------------------------------------------------------------
 ;; Lexical Grammar:
@@ -61,9 +63,7 @@
                                              (:line scanner)))))
 
 (defn- add-error [scanner message]
-  (update scanner :errors conj {:type :scanner
-                                :line (:line scanner)
-                                :message message}))
+  (update scanner :errors conj (line-error (:line scanner) message)))
 
 (defn- match [scanner expected]
   (and (not (at-end? scanner)) (= (current-char scanner) expected)))

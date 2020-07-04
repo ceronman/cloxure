@@ -1,7 +1,9 @@
 (ns cloxure.parser
   "Parser for the Lox programming language."
-  (:require [cloxure.token :as token]
-            [cloxure.ast :as ast]))
+  (:require
+   [cloxure.token :as token]
+   [cloxure.ast :as ast]
+   [cloxure.error :refer [token-error]]))
 
 ;; -----------------------------------------------------------------
 ;; Grammar:
@@ -81,9 +83,7 @@
        (some #(= (::token/type (current-token parser)) %) token-types)))
 
 (defn- add-error [parser message]
-  (update parser :errors conj {:type :parser
-                               :token (current-token parser)
-                               :message message}))
+  (update parser :errors conj (token-error (current-token parser) message)))
 
 (defn- error-and-throw [parser message]
   (let [parser (add-error parser message)]
