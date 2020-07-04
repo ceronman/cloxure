@@ -34,43 +34,43 @@
     "while"})
 
 (defn- new-scanner [source]
-  {:source source
-   :errors []
-   :start 0
-   :current 0
-   :line 1
-   :tokens []})
+  {::source source
+   ::errors []
+   ::start 0
+   ::current 0
+   ::line 1
+   ::tokens []})
 
 (defn- at-end? [scanner]
-  (>= (:current scanner) (count (:source scanner))))
+  (>= (::current scanner) (count (::source scanner))))
 
 (defn- current-char [scanner]
-  (nth (:source scanner) (:current scanner)))
+  (nth (::source scanner) (::current scanner)))
 
 (defn- current-lexeme [scanner]
-  (subs (:source scanner) (:start scanner) (:current scanner)))
+  (subs (::source scanner) (::start scanner) (::current scanner)))
 
 (defn- advance [scanner]
-  (update scanner :current inc))
+  (update scanner ::current inc))
 
 (defn- add-token
   ([scanner token-type]
    (add-token scanner token-type nil))
   ([scanner token-type literal]
-   (update scanner :tokens conj (token/token token-type
+   (update scanner ::tokens conj (token/token token-type
                                              (current-lexeme scanner)
                                              literal
-                                             (:line scanner)))))
+                                             (::line scanner)))))
 
 (defn- add-error [scanner message]
-  (update scanner :errors conj (line-error (:line scanner) message)))
+  (update scanner ::errors conj (line-error (::line scanner) message)))
 
 (defn- match [scanner expected]
   (and (not (at-end? scanner)) (= (current-char scanner) expected)))
 
 (defn- peek-next [scanner]
-  (let [next (inc (:current scanner))
-        source (:source scanner)]
+  (let [next (inc (::current scanner))
+        source (::source scanner)]
     (when (< next (count source))
       (nth source next))))
 
@@ -101,12 +101,12 @@
     (= (current-char scanner) \")  (let [advanced (advance scanner)]
                                      (add-token advanced
                                                 ::token/string
-                                                (subs (:source advanced)
-                                                      (inc (:start advanced))
-                                                      (dec (:current advanced)))))
+                                                (subs (::source advanced)
+                                                      (inc (::start advanced))
+                                                      (dec (::current advanced)))))
 
     :else (recur (advance (if (= (current-char scanner) \newline)
-                            (update scanner :line inc)
+                            (update scanner ::line inc)
                             scanner)))))
 
 (defn- add-number [scanner]
@@ -154,7 +154,7 @@
            (skip-comment (advance scanner))
            (add-token scanner ::token/slash))
       (\return \space \tab) scanner
-      \newline (update scanner :line inc)
+      \newline (update scanner ::line inc)
       \" (add-string scanner)
 
       (cond
@@ -163,7 +163,7 @@
         :else (add-error scanner (str "Unexpected character."))))))
 
 (defn- next-token [scanner]
-  (assoc scanner :start (:current scanner)))
+  (assoc scanner ::start (::current scanner)))
 
 (defn scan
   "Generates a list of tokens from a Lox source code.
@@ -174,7 +174,7 @@
   (loop [scanner (new-scanner source)]
     (if (at-end? scanner)
       (let [scanner (add-token scanner ::token/eof)]
-        [(:tokens scanner) (:errors scanner)])
+        [(::tokens scanner) (::errors scanner)])
       (recur (-> scanner
                  (scan-token)
                  (next-token))))))
