@@ -38,7 +38,7 @@
   (assoc state :errors []))
 
 (defn- run [state source]
-  (let [{tokens :tokens scanner-errors :errors} (scanner/scan source)
+  (let [[tokens scanner-errors] (scanner/scan source)
         {statements :statements parser-errors :errors} (parser/parse tokens)
         errors (concat scanner-errors parser-errors)]
     (if (seq errors)
