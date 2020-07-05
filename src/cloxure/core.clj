@@ -17,7 +17,7 @@
 (defn- report-errors [state errors]
   (doseq [error errors]
     (print-error (error/fmt error)))
-  (assoc state :errors []))
+  (assoc state ::interpreter/errors []))
 
 (defn- run [state source]
   (let [[tokens scanner-errors] (scanner/scan source)
@@ -29,8 +29,8 @@
         (if (seq errors)
           (report-errors state errors)
           (let [state (interpreter/interpret state statements locals)]
-            (if (seq (:errors state))
-              (report-errors state (:errors state))
+            (if (seq (::interpreter/errors state))
+              (report-errors state (::interpreter/errors state))
               state)))))))
 
 (defn run-file [filename]

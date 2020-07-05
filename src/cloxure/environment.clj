@@ -4,10 +4,13 @@
    [cloxure.token :as token]
    [cloxure.error :refer [runtime-error]]))
 
+(defn new-environment [variables]
+  (atom (assoc variables ::enclosing nil)))
+
 (defn- ancestor [env distance]
   (if (zero? distance)
     env
-    (recur (:enclosing @env) (dec distance))))
+    (recur (::enclosing @env) (dec distance))))
 
 (defn get-name-at [env distance name]
   (let [env (ancestor env distance)]
@@ -34,7 +37,7 @@
     (assign-name! env name-token value)))
 
 (defn push-scope [env]
-  (atom {:enclosing env}))
+  (atom {::enclosing env}))
 
 (defn pop-scope [env]
-  (:enclosing (deref env)))
+  (::enclosing (deref env)))
