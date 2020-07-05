@@ -24,7 +24,8 @@
     (format "[line %d] Error at %s: %s" line location (::message error))))
 
 (defn runtime-error [token message]
-  {::type ::runtime ::token token ::message message })
+  (throw (ex-info "Lox Runtime Error"
+                  {::type ::runtime ::token token ::message message})))
 
 (defmethod fmt ::runtime [error]
   (format "%s\n[line %d]" (::message error) (::token/line (::token error))))

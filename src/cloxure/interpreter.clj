@@ -1,18 +1,11 @@
 (ns cloxure.interpreter
+  "A tree-walk interpreter for the Lox programming language."
   (:require
    [cloxure.token :as token]
    [cloxure.ast :as ast]
-   [cloxure.error :refer [runtime-error]]))
-
-; TODO: this is for debugging purposes, remove later.
-(set! clojure.core/*print-level* 5)
-(set! clojure.core/*warn-on-reflection* true)
-
-(defprotocol LoxCallable
-  "Represent a callable object in Lox"
-  (arity [this])
-  (call [this state arguments])
-  (to-string [this]))
+   [cloxure.callable :as callable :refer [LoxCallable]]
+   [cloxure.environment :as environment]
+   [cloxure.error :as error :refer [runtime-error]]))
 
 (def time-builtin
   (reify LoxCallable
@@ -32,58 +25,23 @@
      :environment globals
      :locals {}}))
 
-(defn- raise-error [token message]
-  (throw (ex-info "Runtime Error" 
-                  {::error (runtime-error token message)})))
-
-(defn- env-ancestor [env distance]
-  (if (zero? distance)
-    env
-    (recur (:enclosing @env) (dec distance))))
-
-(defn- env-get-at [env distance name]
-  (let [env (env-ancestor env distance)]
-    (get @env name)))
-
-(defn- env-get [env name-token]
-  (let [name (::token/lexeme name-token)]
-   (if (contains? @env name)
-     (get @env name)
-     (raise-error name-token (format "Undefined variable '%s'." name)))))
-
-(defn- env-declare! [env name value]
-  (swap! env assoc name value)
-  env)
-
-(defn- env-assign! [env name-token value]
-  (let [name (::token/lexeme name-token)]
-    (if (contains? @env name)
-     (swap! env assoc name value)
-     (raise-error name-token (format "Undefined variable '%s'." name)))))
-
 (defn- declare-variable [state name-token value]
   (let [env (:environment state)]
-    (env-declare! env (::token/lexeme name-token) value)
+    (environment/declare-name! env (::token/lexeme name-token) value)
     state))
 
 (defn- lookup-variable [state name-token expr]
-  (if-let [distance (get-in state [:locals expr])]
-    (assoc state :result (env-get-at (:environment state) distance (::token/lexeme name-token)))
-    (assoc state :result (env-get (:globals state) name-token))))
+  (let [{env :environment globals :globals locals :locals} state]
+    (assoc state :result
+     (if-let [distance (get locals expr)]
+       (environment/get-name-at env distance (::token/lexeme name-token))
+       (environment/get-name globals name-token)))))
 
 (defn- assign-variable [state name-token expr value]
-  (let [distance (get-in state [:locals expr])
-        env (if (nil? distance)
-              (:globals state)
-              (env-ancestor (:environment state) distance))]
-    (env-assign! env name-token value)
-    state))
-
-(defn- push-scope [env]
-  (atom {:enclosing env}))
-
-(defn- pop-scope [env]
-  (:enclosing (deref env)))
+  (if-let [distance (get-in state [:locals expr])]
+    (environment/assign-name-at! (:environment state) name-token distance value)
+    (environment/assign-name! (:globals state) name-token value))
+  state)
 
 (defn- truthy? [value]
   (cond
@@ -95,11 +53,11 @@
   ([op-token operator left right]
    (if (and (instance? Double left) (instance? Double right))
      (operator left right)
-     (raise-error op-token "Operands must be numbers.")))
+     (runtime-error op-token "Operands must be numbers.")))
   ([op-token operator right]
    (if (instance? Double right)
      (operator right)
-     (raise-error op-token "Operand must be a number."))))
+     (runtime-error op-token "Operand must be a number."))))
 
 (defmulti evaluate
   "Interprets a Lox AST"
@@ -141,7 +99,7 @@
                             (and (instance? String left) (instance? String right))
                             (str left right)
                             :else
-                            (raise-error op-token
+                            (runtime-error op-token
                                            "Operands must be two numbers or two strings."))
              ::token/slash (numeric-operation op-token / left right)
              ::token/star (numeric-operation op-token * left right)))))
@@ -178,9 +136,9 @@
 
 (defmethod evaluate ::ast/block [state block-stmt]
   (-> state
-      (update :environment push-scope)
+      (update :environment environment/push-scope)
       (evaluate-statements (::ast/statements block-stmt))
-      (update :environment pop-scope)
+      (update :environment environment/pop-scope)
       (assoc :result nil)))
 
 (defn- evaluate-args [state args]
@@ -199,15 +157,15 @@
         arguments (:result state)]
     (cond
       (not (satisfies? LoxCallable callee))
-      (raise-error (::ast/paren call-expr) "Can only call functions and classes.")
+      (runtime-error (::ast/paren call-expr) "Can only call functions and classes.")
 
-      (not= (arity callee) (count arguments))
-      (raise-error (::ast/paren call-expr)
+      (not= (callable/arity callee) (count arguments))
+      (runtime-error (::ast/paren call-expr)
                      (format "Expected %d arguments but got %d."
-                             (arity callee)
+                             (callable/arity callee)
                              (count arguments)))
 
-      :else (call callee state arguments))))
+      :else (callable/call callee state arguments))))
 
 (defn- declare-fn-args [state params args]
   (reduce (fn [state i]
@@ -219,12 +177,14 @@
   (try
     (-> state
         (evaluate-statements statements)
-        (assoc :result (if initializer? (env-get-at closure 0 "this") nil)))
+        (assoc :result (if initializer? (environment/get-name-at closure 0 "this") nil)))
     ; TODO: Investigate custom exceptions
     (catch clojure.lang.ExceptionInfo e
       (let [{return? ::return? state ::state} (ex-data e)]
         (if return?
-          (if initializer? (assoc state :result (env-get-at closure 0 "this")) state)
+          (if initializer? 
+            (assoc state :result (environment/get-name-at closure 0 "this")) 
+            state)
           (throw e))))))
 
 (defrecord LoxFunction [declaration closure initializer?]
@@ -236,14 +196,14 @@
               env (:environment state)
               closure (:closure this)]
           (-> state
-              (assoc :environment (push-scope closure))
+              (assoc :environment (environment/push-scope closure))
               (declare-fn-args (::ast/params declaration) args)
               (execute-fn-body (::ast/body declaration) closure (:initializer? this))
               (assoc :environment env)))))
 
 (defn lox-fn-bind [lox-fn instance]
-  (let [env (push-scope (:closure lox-fn))]
-    (env-declare! env "this" instance)
+  (let [env (environment/push-scope (:closure lox-fn))]
+    (environment/declare-name! env "this" instance)
     (->LoxFunction (:declaration lox-fn) env (:initializer? lox-fn))))
 
 
@@ -268,20 +228,20 @@
       (get @fields name)
       (if-let [method (find-method (:lox-class object) name)]
         (lox-fn-bind method object)
-        (raise-error name-token (str "Undefined property '" name "'."))))))
+        (runtime-error name-token (str "Undefined property '" name "'."))))))
 
 (defrecord LoxClass [name superclass methods]
   LoxCallable
   (arity [this]
     (if-let [initializer (find-method this "init")]
-      (arity initializer)
+      (callable/arity initializer)
       0))
   (to-string [this] (:name this))
   (call [this state args]
     (let [instance (new-instance this)
           initializer (find-method this "init")
           state (if initializer
-                  (call (lox-fn-bind initializer instance) state args)
+                  (callable/call (lox-fn-bind initializer instance) state args)
                   state)]
       (assoc state :result instance))))
 
@@ -297,7 +257,7 @@
         object (:result state)]
     (if (instance? LoxInstance object)
       (assoc state :result (instance-get object name-token))
-      (raise-error name-token "Only instances have properties."))))
+      (runtime-error name-token "Only instances have properties."))))
 
 (defmethod evaluate ::ast/set-expr [state set-expr]
   (let [name-token (::ast/name-token set-expr)
@@ -308,18 +268,18 @@
             value (:result state)]
         (instance-set! object name-token value)
         (assoc state :result value))
-      (raise-error name-token "Only instances have fields."))))
+      (runtime-error name-token "Only instances have fields."))))
 
 (defmethod evaluate ::ast/super [state super-expr]
   (let [distance (get-in state [:locals super-expr])
         env (:environment state)
-        lox-class (env-get-at env distance "super")
-        object (env-get-at env (dec distance) "this")
+        lox-class (environment/get-name-at env distance "super")
+        object (environment/get-name-at env (dec distance) "this")
         method-name (::token/lexeme (::ast/method super-expr))
         method (find-method lox-class method-name)]
     (if method
       (assoc state :result (lox-fn-bind method object))
-      (raise-error (::ast/method super-expr) 
+      (runtime-error (::ast/method super-expr) 
                      (str "Undefined property '" method-name "'.")))))
 
 ;; TODO: Polymorphism please!!!
@@ -333,7 +293,7 @@
     (instance? String value) value
     (instance? Boolean value) (if value "true" "false")
     (instance? LoxInstance value) (format "%s instance" (-> value :lox-class :name))
-    (satisfies? LoxCallable value) (to-string value)
+    (satisfies? LoxCallable value) (callable/to-string value)
     :else "<???>"))
 
 (defmethod evaluate ::ast/print-stmt [state print-stmt]
@@ -370,7 +330,7 @@
           value (:result state)]
       (if (instance? LoxClass value)
         state
-        (raise-error (::ast/name-token superclass) "Superclass must be a class.")))
+        (runtime-error (::ast/name-token superclass) "Superclass must be a class.")))
     (assoc state :result nil)))
 
 (defmethod evaluate ::ast/class-stmt [state class-stmt]
@@ -379,7 +339,7 @@
         superclass (:result state)
         env (:environment state)
         env (if superclass 
-              (env-declare! (push-scope env) "super" superclass) 
+              (environment/declare-name! (environment/push-scope env) "super" superclass) 
               env)
         methods (->> (::ast/methods class-stmt)
                      (map (fn [fun-stmt]
@@ -394,30 +354,31 @@
   (try
     (evaluate-statements (update state :locals merge locals) statements)
     (catch clojure.lang.ExceptionInfo e
-      (if-let [lox-error (::error (ex-data e))]
-        (-> state
-            (update :errors conj lox-error)
-            (assoc :result nil))
-        (throw e)))))
+      (let [lox-error (ex-data e)]
+        (if (= (::error/type lox-error) ::error/runtime)
+          (-> state
+              (update :errors conj lox-error)
+              (assoc :result nil))
+          (throw e))))))
   
 (require '[cloxure.scanner :as scanner])
 (require '[cloxure.parser :as parser])
 (require '[cloxure.resolver :as resolver])
 
-(defn- test-interpreter [code]
-  (let [{errors :errors tokens :tokens} (scanner/scan code)]
+(defn- test-interpreter [source]
+  (let [state (new-interpreter-state)
+        [tokens scanner-errors] (scanner/scan source)
+        [statements parser-errors] (parser/parse tokens)
+        errors (concat scanner-errors parser-errors)]
     (if (seq errors)
-      errors
-      (let [{errors :errors statements :statements} (parser/parse tokens)]
+      (prn errors)
+      (let [[locals errors] (resolver/locals statements)]
         (if (seq errors)
-          errors
-          (let [{errors :errors locals :locals} (resolver/locals statements)]
-            (if (seq errors)
-              errors
-              (let [state (new-interpreter-state)
-                    {errors :errors} (interpret state statements locals)]
-                (when (seq errors)
-                  (println "ERROR", (prn-str errors)))))))))))
+          (prn errors)
+          (let [state (interpret state statements locals)]
+            (when (seq (:errors state))
+              (prn "ERROR" errors))))))))
+
 
 (comment
   (test-interpreter
@@ -469,7 +430,7 @@
 
 (comment
   (test-interpreter
-   "{var a = 1; print a; a = a + 2; print a;}"))
+   "{var a = 1; a = a + 2; print a;}"))
 
 (comment
   (test-interpreter
@@ -506,7 +467,7 @@
 
 (comment
   (test-interpreter
-   "var a = 1; { a = 2; { a = 3; }} print a;"))
+   "var a = 1; { a = 2; }"))
 
 (comment
   (test-interpreter
