@@ -1,10 +1,11 @@
 (ns cloxure.core
   "An interpreter for the Lox programming language."
-  (:require [cloxure.error :as error])
-  (:require [cloxure.scanner :as scanner])
-  (:require [cloxure.parser :as parser])
-  (:require [cloxure.resolver :as resolver])
-  (:require [cloxure.interpreter :as interpreter]))
+  (:require
+   [cloxure.error :as error]
+   [cloxure.scanner :as scanner]
+   [cloxure.parser :as parser]
+   [cloxure.resolver :as resolver]
+   [cloxure.interpreter :as interpreter]))
 
 (defn- print-error [fmt & args]
   (binding [*out* *err*]
@@ -46,9 +47,8 @@
   (loop [state (interpreter/new-interpreter-state)]
     (print "> ")
     (flush)
-    (let [line (read-line)]
-      (when line
-        (recur (run state line))))))
+    (when-let [line (read-line)]
+      (recur (run state line)))))
 
 
 (defn -main [& args]
