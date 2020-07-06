@@ -36,9 +36,8 @@
 (defn var-stmt [name-token initializer]
   {::type ::var-stmt ::name-token name-token ::initializer initializer})
 
-;; TODO: value-expr not consistent with value in other parts
-(defn assign [name-token value-expr]
-  {::type ::assign ::name-token name-token ::value-expr value-expr})
+(defn assign [name-token value]
+  {::type ::assign ::name-token name-token ::value value})
 
 ;; TODO: statements not consistent with body in other parts
 (defn block [statements]

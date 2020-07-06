@@ -139,7 +139,7 @@
   (lookup-variable state (::ast/name-token var-expr) var-expr))
 
 (defmethod evaluate ::ast/assign [state assign-expr]
-  (let [state (evaluate state (::ast/value-expr assign-expr))
+  (let [state (evaluate state (::ast/value assign-expr))
         value (::result state)]
     (assign-variable state (::ast/name-token assign-expr) assign-expr value)))
 

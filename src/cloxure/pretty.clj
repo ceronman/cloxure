@@ -36,8 +36,8 @@
     (format "(var %s)" (::token/lexeme name-token))
     (format "(var %s = %s)" (::token/lexeme name-token) (pretty-print initializer))))
 
-(defmethod pretty-print ::ast/assign [{::ast/keys [name-token value-expr]}]
-  (format "(%s = %s)" (::token/lexeme name-token) (pretty-print value-expr)))
+(defmethod pretty-print ::ast/assign [{::ast/keys [name-token value]}]
+  (format "(%s = %s)" (::token/lexeme name-token) (pretty-print value)))
 
 (defmethod pretty-print ::ast/block [{::ast/keys [statements]}]
   (apply parenthesize "block" statements))

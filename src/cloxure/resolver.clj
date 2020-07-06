@@ -87,7 +87,7 @@
 
 (defmethod resolve-locals ::ast/assign [resolver node]
   (-> resolver
-      (resolve-locals (::ast/value-expr node))
+      (resolve-locals (::ast/value node))
       (resolve-local node (::ast/name-token node))))
 
 (defn- resolve-function [resolver fun-stmt fn-type]
