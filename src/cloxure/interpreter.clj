@@ -17,7 +17,10 @@
 (def builtins
   {"clock" time-builtin})
 
-(defn new-interpreter-state []
+(defn new-interpreter-state 
+  "Creates a new interpreter state to be passed to the `interpret` function.
+   This state can then be pased from call to call, enabling REPL support."
+  []
   (let [globals (environment/new-environment builtins)]
     {::result nil
      ::errors []
@@ -78,9 +81,10 @@
   (let [state (evaluate state (::ast/right unary-expr))
         right (::result state)
         operator (::token/type (::ast/operator unary-expr))]
-    (assoc state ::result (case operator
-                           ::token/minus (numeric-operation (::ast/operator unary-expr) - right)
-                           ::token/bang (not (truthy? right))))))
+    (assoc state ::result
+           (case operator
+             ::token/minus (numeric-operation (::ast/operator unary-expr) - right)
+             ::token/bang (not (truthy? right))))))
 
 (defmethod evaluate ::ast/binary [state binary-expr]
   (let [state (evaluate state (::ast/left binary-expr))
@@ -101,11 +105,14 @@
              ::token/plus (cond
                             (and (instance? Double left) (instance? Double right))
                             (+ left right)
+                            
                             (and (instance? String left) (instance? String right))
                             (str left right)
+                            
                             :else
-                            (runtime-error op-token
-                                           "Operands must be two numbers or two strings."))
+                            (runtime-error
+                             op-token
+                             "Operands must be two numbers or two strings."))
              ::token/slash (numeric-operation op-token / left right)
              ::token/star (numeric-operation op-token * left right)))))
 
@@ -170,7 +177,8 @@
                              (callable/arity callee)
                              (count arguments)))
 
-      :else (callable/call callee state arguments))))
+      :else 
+      (callable/call callee state arguments))))
 
 (defn- declare-fn-args [state params args]
   (reduce (fn [state i]
@@ -182,8 +190,8 @@
   (try
     (-> state
         (evaluate-statements statements)
-        (assoc ::result (if initializer? (environment/get-name-at closure 0 "this") nil)))
-    ; TODO: Investigate custom exceptions
+        (assoc ::result (when initializer? 
+                          (environment/get-name-at closure 0 "this"))))
     (catch clojure.lang.ExceptionInfo e
       (let [{return? ::return? state ::state} (ex-data e)]
         (if return?
@@ -194,8 +202,11 @@
 
 (defrecord LoxFunction [declaration closure initializer?]
   LoxCallable
-  (arity [this] (-> this :declaration ::ast/params count))
-  (to-string [this] (format "<fn %s>" (get-in this [:declaration ::ast/name-token ::token/lexeme])))
+  (arity [this]
+         (-> this :declaration ::ast/params count))
+  (to-string [this] 
+             (format "<fn %s>" 
+                     (get-in this [:declaration ::ast/name-token ::token/lexeme])))
   (call [this state args]
         (let [declaration (:declaration this)
               env (::environment state)
@@ -206,7 +217,7 @@
               (execute-fn-body (::ast/body declaration) closure (:initializer? this))
               (assoc ::environment env)))))
 
-(defn lox-fn-bind [lox-fn instance]
+(defn function-bind [lox-fn instance]
   (let [env (environment/push-scope (:closure lox-fn))]
     (environment/declare-name! env "this" instance)
     (->LoxFunction (:declaration lox-fn) env (:initializer? lox-fn))))
@@ -225,15 +236,17 @@
 (defn- new-instance [lox-class]
   (->LoxInstance lox-class (atom {})))
 
-
 (defn- instance-get [object name-token]
   (let [fields (:fields object)
         name (::token/lexeme name-token)]
     (if (contains? @fields name)
       (get @fields name)
       (if-let [method (find-method (:lox-class object) name)]
-        (lox-fn-bind method object)
+        (function-bind method object)
         (runtime-error name-token (str "Undefined property '" name "'."))))))
+
+(defn- instance-set! [object name-token value]
+  (swap! (:fields object) assoc (::token/lexeme name-token) value))
 
 (defrecord LoxClass [name superclass methods]
   LoxCallable
@@ -246,12 +259,9 @@
     (let [instance (new-instance this)
           initializer (find-method this "init")
           state (if initializer
-                  (callable/call (lox-fn-bind initializer instance) state args)
+                  (callable/call (function-bind initializer instance) state args)
                   state)]
       (assoc state ::result instance))))
-
-(defn- instance-set! [object name-token value]
-  (swap! (:fields object) assoc (::token/lexeme name-token) value))
 
 (defmethod evaluate ::ast/this-expr [state this-expr]
   (lookup-variable state (::ast/keyword this-expr) this-expr))
@@ -283,11 +293,10 @@
         method-name (::token/lexeme (::ast/method super-expr))
         method (find-method lox-class method-name)]
     (if method
-      (assoc state ::result (lox-fn-bind method object))
+      (assoc state ::result (function-bind method object))
       (runtime-error (::ast/method super-expr) 
                      (str "Undefined property '" method-name "'.")))))
 
-;; TODO: Polymorphism please!!!
 (defn- stringify [value]
   (cond
     (nil? value) "nil"
@@ -355,7 +364,14 @@
     (declare-variable state name-token lox-class)))
 
 
-(defn interpret [state statements locals]
+(defn interpret 
+  "Interprets Lox code.
+   It takes an interpreter state, usually created using the new-interpreter-state
+   function, and a list of AST statements generated from the parser 
+   (see cloxure.parser). Additionally it takes a map of lexical scoping locals
+   produced by the resolver (see cloxure.resolver). It returns an updated
+   interpreter state after executing the statements."
+  [state statements locals]
   (try
     (evaluate-statements (update state ::locals merge locals) statements)
     (catch clojure.lang.ExceptionInfo e
@@ -365,474 +381,3 @@
               (update ::errors conj lox-error)
               (assoc ::result nil))
           (throw e))))))
-  
-(require '[cloxure.scanner :as scanner])
-(require '[cloxure.parser :as parser])
-(require '[cloxure.resolver :as resolver])
-
-(defn- test-interpreter [source]
-  (let [state (new-interpreter-state)
-        [tokens scanner-errors] (scanner/scan source)
-        [statements parser-errors] (parser/parse tokens)
-        errors (concat scanner-errors parser-errors)]
-    (if (seq errors)
-      (prn errors)
-      (let [[locals errors] (resolver/locals statements)]
-        (if (seq errors)
-          (prn errors)
-          (let [state (interpret state statements locals)]
-            (when (seq (::errors state))
-              (prn "ERROR" errors))))))))
-
-
-(comment
-  (test-interpreter
-   "1;"))
-
-(comment
-  (test-interpreter
-   "1; true; \"hello\";"))
-
-(comment
-  (test-interpreter
-   "(2);"))
-
-(comment
-  (test-interpreter
-   "-4;"))
-
-(comment
-  (test-interpreter
-   "4 * 4;"))
-
-(comment
-  (test-interpreter
-   "true or false;"))
-
-(comment
-  (test-interpreter
-   "print 16;"))
-
-(comment
-  (test-interpreter
-   "print 1; print 2; print \"hello\"; print 1 + 2; 10 + 20;"))
-
-(comment
-  (test-interpreter
-   "var a; a;"))
-
-(comment
-  (test-interpreter
-   "var a = 4; a * 5;"))
-
-(comment
-  (test-interpreter
-   "a = 4;"))
-
-(comment
-  (test-interpreter
-   "var a = 4; a = 2; a * 5;"))
-
-(comment
-  (test-interpreter
-   "{var a = 1; a = a + 2; print a;}"))
-
-(comment
-  (test-interpreter
-   "{var a = 1; {var a = a + 1;}}"))
-
-(comment
-  (test-interpreter
-   "var a = 1; { var a = 2; print a;}"))
-
-(comment
-  (test-interpreter
-   "var a = 1; var b = 2; print a + b;"))
-
-(comment
-  (test-interpreter
-   "var a = 1; a = 3; print a;"))
-
-(comment
-  (test-interpreter
-   "var a = 1; b = 3; print a;"))
-
-(comment
-  (test-interpreter
-   "var part1 = \"hello \"; var part2 = \"world\"; print part1 + part2;"))
-
-
-(comment
-  (test-interpreter
-   "var a = 1; { var a = 2; print a;} print a;"))
-
-(comment
-  (test-interpreter
-   "var a = 1; { a = 2; } print a;"))
-
-(comment
-  (test-interpreter
-   "var a = 1; { a = 2; }"))
-
-(comment
-  (test-interpreter
-   "var a = 1; { a = 2; { var a = 3; print a; }} print a;"))
-
-(comment
-  (test-interpreter
-   "var a = 1; { var a = a + 1; print a; } print a;"))
-
-(comment
-  (test-interpreter
-   "if (1 == 2) print \"equal\"; else print \"not equal\";"))
-
-(comment
-  (test-interpreter
-   "if (true) { print 1; print 2;}"))
-
-(comment
-  (test-interpreter
-   "if (false) { print 1; print 2;} else print 3;"))
-
-(comment
-  (test-interpreter
-   "var a = 1; if (a == 1) { print 1; print 2;} else print 3;"))
-
-(comment
-  (test-interpreter
-   "var a = true; var b = false; print a or b; print a and b;"))
-
-(comment
-  (test-interpreter
-   "var i = 0; while (i < 5) { i = i + 1; print i;} print \"end\";"))
-
-(comment
-  (test-interpreter
-   "var i = 0; while (i != 0) { print \"not\"; } print \"end\";"))
-
-(comment
-  (test-interpreter
-   "var i = 0; while (i < 5) { b = 2; }"))
-
-(comment
-  (test-interpreter
-   "for (var i = 0; i < 5; i = i + 1) { print i; }"))
-
-(comment
-  (test-interpreter
-   "print clock();"))
-
-(comment
-  (test-interpreter
-   "var before = time(); var i = 100000; while (i > 0) { i = i - 1; } print (time() - before);"))
-
-
-(comment
-  (test-interpreter
-   "fun hello() { print \"hello\"; } hello();"))
-
-(comment
-  (test-interpreter
-   "fun hello(name) { print name; } hello();"))
-
-(comment
-  (test-interpreter
-   "fun hello(name) { print name; } hello(\"manuel\");"))
-
-(comment
-  (test-interpreter
-   "fun sum(a, b) { print a + b; } sum(4);"))
-
-(comment
-  (test-interpreter
-   "fun sum(a, b) { print a + b; } sum(4, 5);"))
-
-(comment
-  (test-interpreter
-   "var a = 10; fun sum1(b) { var a = 1; print a + b; } sum1(4); print a;"))
-
-(comment
-  (test-interpreter
-   "fun sum(a, b) { return a + b; } print sum(4, 6);"))
-
-(comment
-  (test-interpreter
-   "fun test(age) { if (age > 18 ) return; return \"old!\"; } print test(1); print test(20);"))
-
-(comment
-  (test-interpreter
-   "fun test(age) { return; } print test(1);"))
-
-(comment
-  (test-interpreter
-   "return 20;"))
-
-(comment
-  (test-interpreter "
-fun makeCounter() {
-  var i = 0;
-  fun count() {
-    i = i + 1;
-    print i;
-  }
-
-  return count;
-}
-
-var counter = makeCounter();
-counter();
-counter();"))
-
-(comment
-  (test-interpreter "
-fun makeCounter(start) {
-    var i = start;
-    fun count() {
-        i = i + 1;
-        return i;
-    }
-    return count;
-}
-
-var counter = makeCounter(5);
-print counter();
-print counter();"))
-
-(comment
-  (test-interpreter "
-var x = 1;
-fun test () {
-    print x;
-}
-test ();
-x = 2;
-test ();"))
-
-(comment
-  (test-interpreter "
-class DevonshireCream {
-  serveOn() {
-    return \"Scones\";
-  }
-}
-
-print DevonshireCream;"))
-
-(comment
-  (test-interpreter "
-class Bagel {}
-var bagel = Bagel ();
-print bagel;"))
-
-(comment
-  (test-interpreter "
-class Bagel {}
-var bagel = Bagel ();
-print bagel.flavor;"))
-
-(comment
-  (test-interpreter "
-class Bagel {}
-var bagel = Bagel ();
-bagel.flavor = 1;
-print bagel.flavor;"))
-
-(comment
-  (test-interpreter "
-class Bagel {}
-var bagel = Bagel ();
-bagel.flavor = 1;
-bagel.flavor = bagel.flavor + 2;
-print bagel.flavor;"))
-
-(comment
-  (test-interpreter "
-class Bacon {
-  eat() {
-    print \"Crunch crunch crunch!\";
-  }
-}
-
-Bacon().eat();"))
-
-(comment
-  (test-interpreter "
-class Person {
-  sayName() {
-    print this.name;
-  }
-}
-var person = Person();
-person.name = \"Manuel\";
-person.sayName();
-"))
-
-(comment
-  (test-interpreter "
-fun test() {
-    return this.something;
-}
-"))
-
-(comment
-  (test-interpreter "
-class Person {
-  init() {
-    this.name = \"manuel\";
-  }
-}
-var person = Person();
-print person.name;
-"))
-
-(comment
-  (test-interpreter "
-class Foo {
-  init() {
-    return;
-  }
-}
-"))
-
-(comment
-  (test-interpreter "
-class Foo {
-  init() {
-    return 1;
-  }
-}
-"))
-
-(comment
-  (test-interpreter "
-class Foo {
-  init() {
-    print this;
-  }
-}
-
-var foo = Foo();
-print foo.init();
-"))
-
-(comment
-  (test-interpreter "class Oops < Oops {}"))
-
-(comment
-  (test-interpreter "class Oops < NotExists {}"))
-
-(comment
-  (test-interpreter "
-var NotAClass = \"I am totally not a class\";
-class Subclass < NotAClass {} // ?!
-"))
-
-(comment
-  (test-interpreter "
-class A { one() { print 1; } }
-class B < A {}
-var b = B();
-b.one();
-"))
-
-(comment
-  (test-interpreter "
-class Doughnut {
-  cook() {
-    print \"Fry until golden brown.\";
-  }
-}
-
-class BostonCream < Doughnut {
-  cook() {
-    super.cook();
-    print \"Pipe full of custard and coat with chocolate.\";
-  }
-}
-
-BostonCream().cook();
-"))
-
-(comment
-  (test-interpreter "
-class A {
-  method() {
-    print \"A method\";
-  }
-}
-
-class B < A {
-  method() {
-    print \"B method\";
-  }
-
-  test() {
-    super.method();
-  }
-}
-
-class C < B {}
-
-C().test();
-"))
-
-(comment
-  (test-interpreter "
-class Foo {
-  getClosure() {
-    fun f() {
-      fun g() {
-        fun h() {
-          return this.toString();
-        }
-        return h;
-      }
-      return g;
-    }
-    return f;
-  }
-
-  toString() { return \"Foo\"; }
-}
-
-var closure = Foo().getClosure();
-print closure()()();
-"))
-
-(comment
-  (test-interpreter "
-fun g() {
-  var a = 1;
-  print a;
-}
-g();
-"))
-
-(comment
-  (test-interpreter "
-\"s\" + nil;
-"))
-
-
-(comment
-  (test-interpreter "
-class Foo { a(){} }
-print Foo().a;
-"))
-
-(comment
-  (test-interpreter "
-class Base {
-  init(a) {
-    this.a = a;
-  }
-}
-
-class Derived < Base {
-  init(a) {
-    super.init(a);
-  }
-}
-
-var derived = Derived(\"a\");
-"))
