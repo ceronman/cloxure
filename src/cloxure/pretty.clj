@@ -1,4 +1,5 @@
 (ns cloxure.pretty
+  "Pretty prints Lox ASTs"
   (:require [clojure.string :as str]
             [cloxure.token :as token]
             [cloxure.ast :as ast]))

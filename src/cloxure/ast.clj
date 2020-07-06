@@ -1,4 +1,5 @@
-(ns cloxure.ast)
+(ns cloxure.ast
+  "Lox Abstract Syntax Tree (AST) representation for nodes.")
 
 (defn binary [left operator right]
   {::type ::binary ::left left ::right right ::operator operator})
@@ -39,7 +40,6 @@
 (defn assign [name-token value]
   {::type ::assign ::name-token name-token ::value value})
 
-;; TODO: statements not consistent with body in other parts
 (defn block [statements]
   {::type ::block ::statements statements})
 

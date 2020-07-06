@@ -1,4 +1,5 @@
-(ns cloxure.token)
+(ns cloxure.token
+  "Lox lexical grammar tokens.")
 
 (defn token
   ([type text]

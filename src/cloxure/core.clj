@@ -1,4 +1,5 @@
 (ns cloxure.core
+  "An interpreter for the Lox programming language."
   (:require [cloxure.error :as error])
   (:require [cloxure.scanner :as scanner])
   (:require [cloxure.parser :as parser])
