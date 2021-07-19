@@ -57,6 +57,11 @@ To run the tests just run:
 lein test
 ```
 
+## Byte-code VM implementation
+
+I also wrote another implementation of Lox using a byte-code VM Rust called
+[Loxido](https://github.com/ceronman/loxido).
+
 ## Copyright note
 
 Most of the test and benchmark files are copied from [Crafting Interpreters
